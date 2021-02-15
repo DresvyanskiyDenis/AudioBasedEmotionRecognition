@@ -49,8 +49,13 @@ def split_labels_dataframe_according_filenames(label_dataframe:pd.DataFrame) -> 
     return dataframes_list
 
 
-path = r"E:\Databases\SEMAINE\SEM_labels_arousal_100Hz_gold_shifted.csv"
-
-data = load_gold_shifted_labels(path)
-dataframes=split_labels_dataframe_according_filenames(data)
-print(dataframes)
+if __name__=="main":
+    # you can test functions here
+    # specify path to file
+    path = r"E:\Databases\SEMAINE\SEM_labels_arousal_100Hz_gold_shifted.csv"
+    # data should be DataFrame with columns ['filename', 'timestamp', 'label_value']
+    data = load_gold_shifted_labels(path)
+    # dataframes should be list of DataFrames [pd.DataFrame,...]
+    # each with columns ['filename', 'timestamp', 'label_value']
+    dataframes=split_labels_dataframe_according_filenames(data)
+    print(dataframes)

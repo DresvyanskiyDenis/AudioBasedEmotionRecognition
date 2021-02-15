@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+# -*- coding: utf-8 -*-
 """Preprocessing utils for labels
 
 This module contains functions for loading, preprocessing and saving labels in .csv files.

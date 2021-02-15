@@ -18,11 +18,11 @@ from typing import List
 import pandas as pd
 import numpy as np
 
-__author__ = '{Denis Dresvyanskiy}'
-__copyright__ = 'Copyright {2021}'
-__credits__ = ['{Denis Dresvyanskiy}']
-__maintainer__ = '{Denis Dresvyanskiy}'
-__email__ = '{denis.dresvyanskiy@uni-ulm.de}'
+__author__ = "Denis Dresvyanskiy"
+__copyright__ = "Copyright {2021}"
+__credits__ = ["Denis Dresvyanskiy"]
+__maintainer__ = "Denis Dresvyanskiy"
+__email__ = "denis.dresvyanskiy@uni-ulm.de"
 
 
 def load_gold_shifted_labels(path: str) -> pd.DataFrame:

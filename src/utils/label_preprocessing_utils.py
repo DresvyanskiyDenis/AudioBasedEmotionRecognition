@@ -74,7 +74,7 @@ def split_labels_dataframe_according_filenames(label_dataframe:pd.DataFrame) -> 
     return dataframes_list
 
 
-if __name__=="main":
+if __name__=="__main__":
     # you can test functions here
     # specify path to file
     path = r"E:\Databases\SEMAINE\SEM_labels_arousal_100Hz_gold_shifted.csv"

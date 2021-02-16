@@ -13,8 +13,10 @@ __maintainer__ = "Denis Dresvyanskiy"
 __email__ = "denis.dresvyanskiy@uni-ulm.de"
 
 
-def create_1d_cnn_model_classification(*,input_shape:Tuple[int,...],num_classes:int,kernel_sizes:Tuple[int,...]=(15,15,12,12,10,10,5,5,4,3),
-                        filter_numbers:Tuple[int,...]=(16,32,64,64,128,128,256,256,512,512), pooling_step:Optional[int]=2, need_regularization:bool=False) -> tf.keras.Model:
+def create_1d_cnn_model_classification(*,input_shape:Tuple[int,...],num_classes:int,
+                                       kernel_sizes:Tuple[int,...]=(15,15,12,12,10,10,5,5,4,3),
+                                       filter_numbers:Tuple[int,...]=(16,32,64,64,128,128,256,256,512,512),
+                                       pooling_step:Optional[int]=2, need_regularization:bool=False) -> tf.keras.Model:
     """ Creates 1D CNN model according to provided parameters
 
     :param input_shape:tuple
@@ -55,5 +57,11 @@ def create_1d_cnn_model_classification(*,input_shape:Tuple[int,...],num_classes:
     x=tf.keras.layers.Dense(512, activation='relu')(x)
     output=tf.keras.layers.Dense(num_classes, activation='softmax')(x)
     # create a model and return it as a result of function
-    model=tf.keras.Model(input=input, output=output)
+    model=tf.keras.Model(inputs=input, outputs=output)
     return model
+
+
+if __name__=="__main__":
+    input_shape=(16000,1)
+    model=create_1d_cnn_model_classification(input_shape=input_shape,num_classes=7)
+    model.summary()

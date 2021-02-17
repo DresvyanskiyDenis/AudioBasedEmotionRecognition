@@ -25,7 +25,7 @@ def load_wav_file(path:str) -> Tuple[int,np.ndarray]:
     :return: tuple
                 sample rate of .wav file and data
     """
-    sample_rate, data = wavfile.read('./output/audio.wav')
+    sample_rate, data = wavfile.read(path)
     return sample_rate, data
 
 
@@ -49,18 +49,40 @@ def normalize_min_max_data(data:np.ndarray, return_scaler:bool=False) -> Tuple[n
         return transformed_data
 
 def cut_data_on_chunks(data:np.ndarray, chunk_length:int, window_step:int) -> List[np.ndarray]:
+    """
+
+    :param data: ndarray
+                sequence to cut
+    :param chunk_length: int
+
+    :param window_step:
+    :return:
+    """
     if data.shape[0]<chunk_length:
         raise AttributeError("data length should be >= chunk length. Got data length:%i, chunk length:%i"%(data.shape[0], chunk_length))
     if data.shape[0]<window_step:
         raise AttributeError("data length should be >= window_step. Got data length:%i, window_step:%i"%(data.shape[0], window_step))
 
     cut_data=[]
-    #TODO: num_chunks cannot be calculated like this with window_step. rewrite the formula
-    num_chunks=data.shape[0]//chunk_length if data.shape[0]%chunk_length==0 else data.shape[0]//chunk_length+1
+    num_chunks=int(np.ceil((data.shape[0]-chunk_length)/window_step+1))
+
+    for chunk_idx in range(num_chunks-1):
+        start=chunk_idx*window_step
+        end=chunk_idx*window_step+chunk_length
+        chunk=data[start:end]
+        cut_data.append(chunk)
+
+    last_chunk=data[-chunk_length:]
+    cut_data.append(last_chunk)
+
+    return cut_data
+
 
 
 
 
 
 if __name__=='__main__':
-    path=r'C:\Users\Dresvyanskiy\Downloads\SEW1101.wav'
+    path=r'D:\Databases\SEWA\Original\audio\SEW1101.wav'
+    sr, data=load_wav_file(path)
+    cut_data=cut_data_on_chunks(data, chunk_length=16000,window_step=8000)

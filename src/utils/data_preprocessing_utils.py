@@ -28,6 +28,30 @@ def load_wav_file(path:str) -> Tuple[int,np.ndarray]:
     sample_rate, data = wavfile.read(path)
     return sample_rate, data
 
+def get_trained_minmax_scaler(data:np.ndarray) -> object:
+    """Trains and returns MinMaxScaler from sklearn library.
+
+    :param data: np.ndarray
+            data, on which scaler will be learnt
+    :return: sklearn.preprocessing.MinMaxScaler
+            trained on data scaler
+    """
+    normalizer = MinMaxScaler()
+    normalizer = normalizer.fit(data)
+    return normalizer
+
+def transform_data_with_scaler(data:np.ndarray, scaler:object) -> np.ndarray:
+    """Transforms data by passed scaler object (from sklearn.preprocessing).
+
+    :param data: np.ndarray
+            data to trasform
+    :param scaler: sklearn.preprocessing object
+            scaler, which will apply transformation operation to data
+    :return: np.ndarray
+            transformed data
+    """
+    transformed_data=scaler.transform(data)
+    return transformed_data
 
 def normalize_min_max_data(data:np.ndarray, return_scaler:bool=False) -> Tuple[np.ndarray,Optional[object]] or np.ndarray:
     """Normalize data via minmax normalization with the help of sklearn.preprocessing.MinMaxScaler.
@@ -40,8 +64,7 @@ def normalize_min_max_data(data:np.ndarray, return_scaler:bool=False) -> Tuple[n
     :return: (numpy.ndarray, object) or numpy.ndarray
                 return either data or data with scaler
     """
-    normalizer=MinMaxScaler()
-    normalizer=normalizer.fit(data)
+    normalizer=get_trained_minmax_scaler(data)
     transformed_data=np.array(normalizer.transform(data))
     if return_scaler:
         return transformed_data, normalizer
@@ -49,7 +72,10 @@ def normalize_min_max_data(data:np.ndarray, return_scaler:bool=False) -> Tuple[n
         return transformed_data
 
 def cut_data_on_chunks(data:np.ndarray, chunk_length:int, window_step:int) -> List[np.ndarray]:
-    """
+    """Cuts data on chunks according to supplied chunk_length and windows_step.
+        Example:
+        data=|123456789|, chunk_length=4, window_step=3
+        result= [1234, 4567, 6789] -> last element (6789)
 
     :param data: ndarray
                 sequence to cut

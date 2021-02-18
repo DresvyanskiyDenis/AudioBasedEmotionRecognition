@@ -14,7 +14,7 @@ List of functions:
       to their filename.
     * main - function for testing implemented functions.
 """
-from typing import List
+from typing import List, Dict
 import pandas as pd
 import numpy as np
 
@@ -52,7 +52,7 @@ def load_gold_shifted_labels(path: str) -> pd.DataFrame:
     return labels_dataframe
 
 
-def split_labels_dataframe_according_filenames(label_dataframe:pd.DataFrame) -> List[pd.DataFrame]:
+def split_labels_dataframe_according_filenames(label_dataframe:pd.DataFrame) -> Dict[str,pd.DataFrame]:
     """ Split labels located in DataFrame according their filename on different DataFrames
 
     :param label_dataframe: pd.DataFrame
@@ -60,17 +60,17 @@ def split_labels_dataframe_according_filenames(label_dataframe:pd.DataFrame) -> 
                                               filename
                                               timestamp
                                               label_value (arousal or valence)
-    :return: list
-            list of split DataFrames
+    :return: dict
+            dict of split DataFrames
     """
     # create resulting variable
-    dataframes_list=[]
+    dataframes_list={}
     # extract unique filenames from "filename" column
     filenames=label_dataframe['filename'].unique()
     #split DataFrame according filenames and append split DataFrames to resulting list
     for filename in filenames:
         filename_dataframe=label_dataframe[label_dataframe['filename']==filename]
-        dataframes_list.append(filename_dataframe)
+        dataframes_list[filename]=filename_dataframe
     return dataframes_list
 
 

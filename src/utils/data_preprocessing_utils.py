@@ -80,9 +80,11 @@ def cut_data_on_chunks(data:np.ndarray, chunk_length:int, window_step:int) -> Li
     :param data: ndarray
                 sequence to cut
     :param chunk_length: int
-
-    :param window_step:
-    :return:
+                length of window/chunk. It is calculated before function as seconds*sample_rate
+    :param window_step: int
+                length of shift of the window/chunk.
+    :return: list of np.ndarrays
+                cut on windows data
     """
     if data.shape[0]<chunk_length:
         raise AttributeError("data length should be >= chunk length. Got data length:%i, chunk length:%i"%(data.shape[0], chunk_length))

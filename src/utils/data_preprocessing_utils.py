@@ -8,6 +8,7 @@ import pandas as pd
 import numpy as np
 from scipy.io import wavfile
 from sklearn.preprocessing import MinMaxScaler
+import librosa
 
 __author__ = "Denis Dresvyanskiy"
 __copyright__ = "Copyright 2021"
@@ -67,11 +68,36 @@ def normalize_min_max_data(data:np.ndarray, return_scaler:bool=False) -> Tuple[n
                 return either data or data with scaler
     """
     normalizer=get_trained_minmax_scaler(data)
-    transformed_data=np.array(normalizer.transform(data))
+    transformed_data=transform_data_with_scaler(data, normalizer)
     if return_scaler:
         return transformed_data, normalizer
     else:
         return transformed_data
+
+def extract_mfcc_from_audio_sequence(data:np.ndarray, sample_rate:int, num_mfcc:int,
+                                     length_fft:int, length_fft_step:int) -> np.ndarray:
+    """Extracts features from given data ndarray with the help of librosa library.
+    https://librosa.org/doc/main/generated/librosa.feature.mfcc.html
+
+    :param data: ndarray
+                represents audio file (from example, extracted from .wav file)
+                the shape should be (data_length,)
+    :param sample_rate: int
+                sample rate of the provided data
+    :param num_mfcc: int
+                desirable number of mfcc features to extract
+    :param length_fft: int
+                the length of the window, in which the foyer transformation will be applied
+    :param length_fft_step: int
+                the length of the step, on which the former window will be shifted
+    :return: ndarray
+                extracted features with the shape (?,num_mfcc)
+                the first dimension is computed by librosa and depends on length_fft and length_fft_step
+    """
+    mfcc_features=librosa.feature.mfcc(data, sr=sample_rate, n_mfcc=num_mfcc,
+                                       n_fft=length_fft, hop_length=length_fft_step)
+    return mfcc_features
+
 
 def cut_data_on_chunks(data:np.ndarray, chunk_length:int, window_step:int) -> List[np.ndarray]:
     """Cuts data on chunks according to supplied chunk_length and windows_step.

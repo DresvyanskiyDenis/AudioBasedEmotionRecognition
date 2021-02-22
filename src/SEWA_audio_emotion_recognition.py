@@ -3,12 +3,12 @@
 """
 
 """
-
-
 from typing import List, Dict, Tuple
 import pandas as pd
 import numpy as np
 import os
+import scipy.signal as sps
+import tensorflow as tf
 
 from src.utils.data_preprocessing_utils import load_wav_file, get_trained_minmax_scaler, transform_data_with_scaler, \
     cut_data_on_chunks
@@ -26,6 +26,11 @@ def load_all_wav_files(path:str)-> Dict[str,Tuple[np.ndarray, int]]:
     filenames=os.listdir(path)
     for filename in filenames:
         sample_rate,wav_file=load_wav_file(os.path.join(path,filename))
+        # Resample data
+        number_of_samples = round(len(wav_file) * float(16000) / sample_rate)
+        wav_file = sps.resample(wav_file, number_of_samples)
+        sample_rate=16000
+
         if len(wav_file.shape)<2: wav_file=wav_file[..., np.newaxis]
         loaded_wav_files[filename.split(".")[0]]=(wav_file, sample_rate)
     return loaded_wav_files
@@ -93,38 +98,38 @@ def align_audio_and_labels(data:Dict[str, Tuple[np.ndarray, int]], labels:Dict[s
         data[filename]=(current_data, sample_rate_data)
     return data, labels
 
-
-def normalize_minmax_train_dev_test(data:Tuple[Dict[str,np.ndarray], Dict[str,np.ndarray], Dict[str,np.ndarray]], scaler) -> Tuple[Dict[str,np.ndarray], Dict[str,np.ndarray], Dict[str,np.ndarray]]:
-    train_data, dev_data, test_data=data
-    for key, value in train_data.items():
-        sample_rate=train_data[key][1]
-        values=train_data[key][0]
-        train_data[key]=(transform_data_with_scaler(values, scaler).astype('float32'), sample_rate)
-    for key, value in dev_data.items():
-        sample_rate=dev_data[key][1]
-        values=dev_data[key][0]
-        dev_data[key]=(transform_data_with_scaler(values, scaler).astype('float32'), sample_rate)
-    for key, value in test_data.items():
-        sample_rate=test_data[key][1]
-        values=test_data[key][0]
-        test_data[key] = (transform_data_with_scaler(values, scaler).astype('float32'), sample_rate)
-    return train_data, dev_data, test_data
-
+def normalize_data(data:np.ndarray, scaler:object)->np.ndarray:
+    for i in range(data.shape[0]):
+        data[i]=scaler.transform(data[i])
+    return data
 
 def shuffle_data_labels(data:np.ndarray, labels:np.ndarray)->Tuple[np.ndarray, np.ndarray]:
     permutations=np.random.permutation(data.shape[0])
     data, labels = data[permutations], labels[permutations]
     return data, labels
 
+def delete_data_with_percent_zeros(data:np.ndarray, labels:np.ndarray, percent:int)->Tuple[np.ndarray, np.ndarray]:
+    new_data=[]
+    new_labels=[]
+    threshold_amount_of_zeros=int(data.shape[1]*percent/100)
+    for i in range(data.shape[0]):
+        values=data[i]
+        if not (values==0).sum()>=threshold_amount_of_zeros:
+            new_data.append(data[i][np.newaxis,...])
+            new_labels.append(labels[i][np.newaxis,...])
+    new_data=np.concatenate(new_data, axis=0)
+    new_labels=np.concatenate(new_labels, axis=0)
+    return new_data, new_labels
+
 if __name__=="__main__":
     # params
-    path_to_data=r"D:\Databases\SEWA\Original\audio"
-    path_to_labels=r"D:\Databases\SEWA\SEW_labels_arousal_100Hz_gold_shifted.csv"
+    path_to_data=r"E:\Databases\SEWA\Original\audio"
+    path_to_labels=r"E:\Databases\SEWA\SEW_labels_arousal_100Hz_gold_shifted.csv"
     test_filenames=["SEW1123","SEW1124","SEW2223","SEW2224"]
     dev_filenames=["SEW1119","SEW1120","SEW1121","SEW1122",
                           "SEW2219","SEW2220","SEW2221","SEW2222"]
     # lengths are in seconds
-    chunk_length=1
+    chunk_length=2
     chunk_step=0.5
     # load labels and data
     labels=load_and_split_labels(path_to_labels)
@@ -135,20 +140,25 @@ if __name__=="__main__":
         # separate dev, test data
     train_data, dev_data, test_data=split_data_on_train_dev_test(data, dev_filenames, test_filenames)
     train_lbs, dev_lbs, test_lbs=split_labels_on_train_dev_test(labels, dev_filenames, test_filenames)
-        # normalize data
+        # train normalizer
     concatenated_train_data=np.concatenate([x[0] for x in train_data.values()])
     train_scaler=get_trained_minmax_scaler(data=concatenated_train_data)
-    train_data, dev_data, test_data = normalize_minmax_train_dev_test((train_data, dev_data, test_data), train_scaler)
         # cut train data and labels
     cut_train_data, cut_train_lbs=cut_train_data_and_labels_on_chunks(train_data, train_lbs, chunk_length, chunk_step)
+        # delete data with zeros more than 50%
+    cut_train_data, cut_train_lbs = delete_data_with_percent_zeros(cut_train_data, cut_train_lbs, percent=50)
+        # normalize train data
+    cut_train_data=cut_train_data.astype('float32')
+    cut_train_data = normalize_data(cut_train_data, train_scaler)
         # shuffle train data and labels
     cut_train_data, cut_train_lbs = shuffle_data_labels(cut_train_data, cut_train_lbs)
-    cut_train_lbs=cut_train_lbs[:,::5,2]
+    cut_train_lbs=cut_train_lbs[:,::4,2]
     # create model
-    model=create_1d_cnn_model_regression(input_shape=cut_train_data.shape[1:],num_output_neurons=20,
-                                       kernel_sizes=(15,15,12,12,10,10,5,5,4,3,3),
-                                       filter_numbers=(16,32,64,64,128,128,256,256,512,512,1024),
-                                       pooling_step=1, need_regularization=False)
-    model.compile(optimizer='Adam', loss=CCC_loss_tf)
+    model=create_1d_cnn_model_regression(input_shape=cut_train_data.shape[1:],num_output_neurons=cut_train_lbs.shape[1],
+                                       kernel_sizes=(10,8,6,5),
+                                       filter_numbers=(128,128,256,256),
+                                       pooling_sizes=(10,4,4,4),
+                                       pooling_step=1, need_regularization=False, dropout=True)
+    model.compile(optimizer=tf.keras.optimizers.Adam(0.0001), loss=ccc_loss, metrics=['mse'])
     model.summary()
-    model.fit(cut_train_data, cut_train_lbs.astype('float32')[..., np.newaxis], batch_size=1, epochs=1)
+    model.fit(cut_train_data.astype('float32'), cut_train_lbs.astype('float32')[..., np.newaxis], batch_size=32, epochs=100)

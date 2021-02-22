@@ -28,15 +28,17 @@ def load_wav_file(path:str) -> Tuple[int,np.ndarray]:
     sample_rate, data = wavfile.read(path)
     return sample_rate, data
 
-def get_trained_minmax_scaler(data:np.ndarray) -> object:
+def get_trained_minmax_scaler(data:np.ndarray, feature_range:Tuple[float, float]=(-1,1)) -> object:
     """Trains and returns MinMaxScaler from sklearn library.
 
     :param data: np.ndarray
             data, on which scaler will be learnt
+    :param feature_range: tuple(int, int)
+            range of the future features
     :return: sklearn.preprocessing.MinMaxScaler
             trained on data scaler
     """
-    normalizer = MinMaxScaler()
+    normalizer = MinMaxScaler(feature_range=feature_range)
     normalizer = normalizer.fit(data)
     return normalizer
 

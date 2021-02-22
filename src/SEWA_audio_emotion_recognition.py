@@ -134,9 +134,9 @@ if __name__=="__main__":
     chunk_step=0.5
     # load labels and data
     labels=load_and_split_labels(path_to_labels)
-    data=load_all_wav_files(path_to_data)
+    data=load_all_wav_files(path_to_data, resample=True, new_sample_rate=16000)
     # preprocess data
-        # align data to labels
+        # align data length according to labels
     data, labels= align_audio_and_labels(data, labels)
         # separate dev, test data
     train_data, dev_data, test_data=split_data_on_train_dev_test(data, dev_filenames, test_filenames)

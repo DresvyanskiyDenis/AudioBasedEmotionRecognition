@@ -118,6 +118,67 @@ def create_1d_cnn_model_regression(*,input_shape:Tuple[int,...],num_output_neuro
     model=tf.keras.Model(inputs=input, outputs=output)
     return model
 
+def create_simple_RNN_network(*,input_shape:Tuple[int,...],num_output_neurons:int,
+                              neurons_on_layer: Tuple[int, ...] = (256, 256),
+                              rnn_type:str='LSTM',
+                              dnn_layers: Tuple[int,],
+                              need_regularization: bool = False,
+                              dropout: bool = False) -> tf.keras.Model:
+    """ Creates RNN neural network according to provided parameters
+
+    :param input_shape: tuple
+                    input shape (of sequence )for tensrflow.keras model
+    :param num_output_neurons: int
+                    amount of neurons at the end of model (output of model)
+    :param neurons_on_layer: tuple(int,...)
+                    list of numbers of neurons on each layer. It controls the depth of the network as well.
+    :param rnn_type: str
+                    can be either 'simple', 'LSTM' or 'GRU'. Specifies the type of reccurent layer, which will be used
+    :param dnn_layers: tuple(str,...)
+                    list of numbers of neurons on each layer right after reccurent layers. Can be empty ().
+    :param need_regularization: bool
+                    Specifies if it is needed to use regularization in reccurent and dense layers or not
+                    if true, tf.keras.regularizers.l2(1e-5) will be applied
+    :param dropout: bool
+                    Specifies, if it is needed to use dropour after every reccurent and dense layers.
+                    if true, tf.keras.layers.Dropout(0.2) will be applied
+    :return:
+    """
+    # create input layer for Model
+    if len(input_shape)!=2:
+        raise AttributeError('input shape must be 2-dimensional. Got %i'%(len(input_shape)))
+    # define rnn rnn_type
+    if rnn_type == 'simple':
+        layer_type = tf.keras.layers.SimpleRNN
+    elif rnn_type == 'LSTM':
+        layer_type = tf.keras.layers.LSTM
+    elif rnn_type == 'GRU':
+        layer_type = tf.keras.layers.GRU
+    else:
+        raise AttributeError('rnn_type should be either \'simple\', \'LSTM\' or \'GRU\'. Got %s' % (rnn_type))
+    regularization = tf.keras.regularizers.l2(1e-5) if need_regularization else None
+
+    input=tf.keras.layers.Input(input_shape)
+    x=input
+    for layer_idx in range(len(neurons_on_layer)-1):
+        neurons= neurons_on_layer[layer_idx]
+        x = layer_type(neurons, return_sequences=True, kernel_regularizer=regularization)(x)
+        if dropout: x= tf.keras.layers.Dropout(0.2)(x)
+    # last RNN layer
+    x = layer_type(neurons_on_layer[-1])(x)
+    # dnn layers
+    for layer_idx in range(len(dnn_layers)):
+        neurons=dnn_layers[layer_idx]
+        x = tf.keras.layers.Dense(neurons, activation='relu', kernel_regularizer=regularization)(x)
+        if dropout: x = tf.keras.layers.Dropout(0.2)(x)
+    # last layer
+    output = tf.keras.layers.Dense(num_output_neurons, activation='tanh')(x)
+    # create model
+    model= tf.keras.Model(inputs=[input], outputs=[output])
+    return model
+
+
+
 
 
 def ccc_loss(gold, pred):  # Concordance correlation coefficient (CCC)-based loss function - using non-inductive statistics

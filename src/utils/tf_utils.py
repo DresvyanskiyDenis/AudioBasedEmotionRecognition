@@ -173,6 +173,7 @@ def create_simple_RNN_network(*,input_shape:Tuple[int,...],num_output_neurons:in
         if dropout: x = tf.keras.layers.Dropout(0.2)(x)
     # last layer
     output = tf.keras.layers.Dense(num_output_neurons, activation='tanh')(x)
+    output = tf.keras.layers.Reshape((-1,1))(output)
     # create model
     model= tf.keras.Model(inputs=[input], outputs=[output])
     return model

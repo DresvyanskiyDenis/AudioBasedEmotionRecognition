@@ -91,7 +91,7 @@ def extract_mfcc_from_audio_sequence(data:np.ndarray, sample_rate:int, num_mfcc:
     :param length_fft_step: int
                 the length of the step, on which the former window will be shifted
     :return: ndarray
-                extracted features with the shape (?,num_mfcc)
+                extracted features with the shape (num_mfcc,?)
                 the first dimension is computed by librosa and depends on length_fft and length_fft_step
     """
     mfcc_features=librosa.feature.mfcc(data, sr=sample_rate, n_mfcc=num_mfcc,

@@ -11,9 +11,10 @@ import scipy.signal as sps
 import tensorflow as tf
 
 from src.utils.data_preprocessing_utils import load_wav_file, get_trained_minmax_scaler, transform_data_with_scaler, \
-    cut_data_on_chunks
+    cut_data_on_chunks, extract_mfcc_from_audio_sequence
 from src.utils.label_preprocessing_utils import load_gold_shifted_labels, split_labels_dataframe_according_filenames
-from src.utils.tf_utils import create_1d_cnn_model_classification, create_1d_cnn_model_regression, ccc_loss, CCC_loss_tf
+from src.utils.tf_utils import create_1d_cnn_model_classification, create_1d_cnn_model_regression, ccc_loss, \
+    CCC_loss_tf, create_simple_RNN_network
 
 
 def load_and_split_labels(path:str) -> Dict[str,pd.DataFrame]:
@@ -122,8 +123,20 @@ def delete_data_with_percent_zeros(data:np.ndarray, labels:np.ndarray, percent:i
     new_labels=np.concatenate(new_labels, axis=0)
     return new_data, new_labels
 
+def extract_mfcc_from_cut_data(data:np.ndarray, sample_rate:int=16000, num_mfcc:int=256,
+                                     length_fft:int=512, length_fft_step:int=256)-> np.ndarray:
+    extracted_mfcc=[]
+    for i in range(data.shape[0]):
+        extracted_mfcc_audio=extract_mfcc_from_audio_sequence(data[i].reshape((-1,)), sample_rate=sample_rate, num_mfcc=num_mfcc,
+                                                              length_fft=length_fft, length_fft_step=length_fft_step)
+        extracted_mfcc.append(extracted_mfcc_audio.T[np.newaxis,...])
+    extracted_mfcc=np.concatenate(extracted_mfcc, axis=0)
+    return extracted_mfcc
+
 if __name__=="__main__":
     # params
+    gpu_devices = tf.config.experimental.list_physical_devices('GPU')
+    for device in gpu_devices: tf.config.experimental.set_memory_growth(device, True)
     path_to_data=r"E:\Databases\SEWA\Original\audio"
     path_to_labels=r"E:\Databases\SEWA\SEW_labels_arousal_100Hz_gold_shifted.csv"
     test_filenames=["SEW1123","SEW1124","SEW2223","SEW2224"]
@@ -141,13 +154,18 @@ if __name__=="__main__":
         # separate dev, test data
     train_data, dev_data, test_data=split_data_on_train_dev_test(data, dev_filenames, test_filenames)
     train_lbs, dev_lbs, test_lbs=split_labels_on_train_dev_test(labels, dev_filenames, test_filenames)
-        # train normalizer
-    concatenated_train_data=np.concatenate([x[0] for x in train_data.values()])
-    train_scaler=get_trained_minmax_scaler(data=concatenated_train_data)
+    del dev_data
+    del test_data
+
         # cut train data and labels
     cut_train_data, cut_train_lbs=cut_train_data_and_labels_on_chunks(train_data, train_lbs, chunk_length, chunk_step)
         # delete data with zeros more than 50%
     cut_train_data, cut_train_lbs = delete_data_with_percent_zeros(cut_train_data, cut_train_lbs, percent=50)
+        #extract mfcc from cut data
+    cut_train_data = extract_mfcc_from_cut_data(cut_train_data)
+        # train normalizer
+    concatenated_train_data=np.concatenate([x for x in cut_train_data])
+    train_scaler=get_trained_minmax_scaler(data=concatenated_train_data)
         # normalize train data
     cut_train_data=cut_train_data.astype('float32')
     cut_train_data = normalize_data(cut_train_data, train_scaler)
@@ -155,11 +173,17 @@ if __name__=="__main__":
     cut_train_data, cut_train_lbs = shuffle_data_labels(cut_train_data, cut_train_lbs)
     cut_train_lbs=cut_train_lbs[:,::4,2]
     # create model
-    model=create_1d_cnn_model_regression(input_shape=cut_train_data.shape[1:],num_output_neurons=cut_train_lbs.shape[1],
+    """    model=create_1d_cnn_model_regression(input_shape=cut_train_data.shape[1:],num_output_neurons=cut_train_lbs.shape[1],
                                        kernel_sizes=(10,8,6,5),
                                        filter_numbers=(128,128,256,256),
                                        pooling_sizes=(10,4,4,4),
-                                       pooling_step=1, need_regularization=False, dropout=True)
+                                       pooling_step=1, need_regularization=False, dropout=True)"""
+    model=create_simple_RNN_network(input_shape=cut_train_data.shape[1:],num_output_neurons=50,
+                              neurons_on_layer = (128, 128),
+                              rnn_type='LSTM',
+                              dnn_layers=(256,),
+                              need_regularization = True,
+                              dropout= False)
     model.compile(optimizer=tf.keras.optimizers.Adam(0.0001), loss=ccc_loss, metrics=['mse'])
     model.summary()
-    model.fit(cut_train_data.astype('float32'), cut_train_lbs.astype('float32')[..., np.newaxis], batch_size=32, epochs=100)
+    model.fit(cut_train_data.astype('float32'), cut_train_lbs.astype('float32')[..., np.newaxis], batch_size=128, epochs=200)

@@ -17,19 +17,20 @@ from src.utils.tf_utils import create_1d_cnn_model_classification, create_1d_cnn
 
 
 def load_and_split_labels(path:str) -> Dict[str,pd.DataFrame]:
-    labels = load_gold_shifted_labels(path_to_labels)
+    labels = load_gold_shifted_labels(path)
     splitted_labels=split_labels_dataframe_according_filenames(labels)
     return splitted_labels
 
-def load_all_wav_files(path:str)-> Dict[str,Tuple[np.ndarray, int]]:
+def load_all_wav_files(path:str, resample:bool=False, new_sample_rate:int=16000)-> Dict[str,Tuple[np.ndarray, int]]:
     loaded_wav_files={}
     filenames=os.listdir(path)
     for filename in filenames:
         sample_rate,wav_file=load_wav_file(os.path.join(path,filename))
         # Resample data
-        number_of_samples = round(len(wav_file) * float(16000) / sample_rate)
-        wav_file = sps.resample(wav_file, number_of_samples)
-        sample_rate=16000
+        if resample:
+            number_of_samples = round(len(wav_file) * new_sample_rate / sample_rate)
+            wav_file = sps.resample(wav_file, number_of_samples)
+            sample_rate=new_sample_rate
 
         if len(wav_file.shape)<2: wav_file=wav_file[..., np.newaxis]
         loaded_wav_files[filename.split(".")[0]]=(wav_file, sample_rate)

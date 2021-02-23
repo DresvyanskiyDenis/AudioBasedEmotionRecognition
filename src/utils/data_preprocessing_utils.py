@@ -101,6 +101,7 @@ def extract_mfcc_from_audio_sequence(data:np.ndarray, sample_rate:int, num_mfcc:
 
 def extract_opensmile_features_from_audio_sequence(data:Union[np.ndarray, str], sample_rate:Optional[int]=None, feature_type:str='LLD') -> np.ndarray:
     """Extracts opensmile ComParE_2016 features from audio sequence represented either by ndarray or path.
+    https://github.com/audeering/opensmile-python
 
     :param data: np.ndarray or str
                 Can be ndarray - already loaded sound data or str - path to data

@@ -11,7 +11,7 @@ import scipy.signal as sps
 import tensorflow as tf
 
 from src.utils.data_preprocessing_utils import load_wav_file, get_trained_minmax_scaler, transform_data_with_scaler, \
-    cut_data_on_chunks, extract_mfcc_from_audio_sequence
+    cut_data_on_chunks, extract_mfcc_from_audio_sequence, extract_opensmile_features_from_audio_sequence
 from src.utils.label_preprocessing_utils import load_gold_shifted_labels, split_labels_dataframe_according_filenames
 from src.utils.tf_utils import create_1d_cnn_model_classification, create_1d_cnn_model_regression, ccc_loss, \
     CCC_loss_tf, create_simple_RNN_network
@@ -133,12 +133,21 @@ def extract_mfcc_from_cut_data(data:np.ndarray, sample_rate:int=16000, num_mfcc:
     extracted_mfcc=np.concatenate(extracted_mfcc, axis=0)
     return extracted_mfcc
 
+def extract_opensmile_features_from_cut_data(data:np.ndarray, sample_rate:int=16000)-> np.ndarray:
+    extracted_features=[]
+    for i in range(data.shape[0]):
+        extracted_opensmile_features=extract_opensmile_features_from_audio_sequence(data[i],sample_rate=sample_rate)
+        extracted_features.append(extracted_opensmile_features[np.newaxis,...])
+    extracted_features = np.concatenate(extracted_features, axis=0)
+    return extracted_features
+
+
 if __name__=="__main__":
     # params
     gpu_devices = tf.config.experimental.list_physical_devices('GPU')
     for device in gpu_devices: tf.config.experimental.set_memory_growth(device, True)
-    path_to_data=r"E:\Databases\SEWA\Original\audio"
-    path_to_labels=r"E:\Databases\SEWA\SEW_labels_arousal_100Hz_gold_shifted.csv"
+    path_to_data=r"D:\Databases\SEWA\Original\audio"
+    path_to_labels=r"D:\Databases\SEWA\SEW_labels_arousal_100Hz_gold_shifted.csv"
     test_filenames=["SEW1123","SEW1124","SEW2223","SEW2224"]
     dev_filenames=["SEW1119","SEW1120","SEW1121","SEW1122",
                           "SEW2219","SEW2220","SEW2221","SEW2222"]
@@ -162,7 +171,7 @@ if __name__=="__main__":
         # delete data with zeros more than 50%
     cut_train_data, cut_train_lbs = delete_data_with_percent_zeros(cut_train_data, cut_train_lbs, percent=50)
         #extract mfcc from cut data
-    cut_train_data = extract_mfcc_from_cut_data(cut_train_data)
+    cut_train_data = extract_opensmile_features_from_cut_data(cut_train_data)
         # train normalizer
     concatenated_train_data=np.concatenate([x for x in cut_train_data])
     train_scaler=get_trained_minmax_scaler(data=concatenated_train_data)

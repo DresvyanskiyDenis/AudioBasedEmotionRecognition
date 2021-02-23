@@ -9,6 +9,7 @@ import numpy as np
 from scipy.io import wavfile
 from sklearn.preprocessing import MinMaxScaler
 import librosa
+import opensmile
 
 __author__ = "Denis Dresvyanskiy"
 __copyright__ = "Copyright 2021"
@@ -97,6 +98,37 @@ def extract_mfcc_from_audio_sequence(data:np.ndarray, sample_rate:int, num_mfcc:
     mfcc_features=librosa.feature.mfcc(data, sr=sample_rate, n_mfcc=num_mfcc,
                                        n_fft=length_fft, hop_length=length_fft_step)
     return mfcc_features
+
+def extract_opensmile_features_from_audio_sequence(data:Union[np.ndarray, str], sample_rate:Optional[int]=None, feature_type:str='LLD') -> np.ndarray:
+    """Extracts opensmile ComParE_2016 features from audio sequence represented either by ndarray or path.
+
+    :param data: np.ndarray or str
+                Can be ndarray - already loaded sound data or str - path to data
+    :param sample_rate: Optional[int]
+                Sample rate is needed if data in ndarray format is provided
+    :return: np.ndarray
+                extracted features
+    """
+    # check if feature_type is supported
+    if feature_type == 'LLD':
+        feature_level=opensmile.FeatureLevel.LowLevelDescriptors
+    elif feature_type == 'Functionals':
+        feature_level=opensmile.FeatureLevel.Functionals
+    else:
+        raise AttributeError('feature_type must be either \'Functionals\' or \'LLD\'. Got %s.'%(feature_type))
+    smile = opensmile.Smile(
+        feature_set=opensmile.FeatureSet.ComParE_2016,
+        feature_level=feature_level,
+    )
+    # check if data is a valid type and if yes, extract features properly
+    if isinstance(data,str):
+        extracted_features = smile.process_file(data).values
+    elif isinstance(data, np.ndarray):
+        extracted_features = smile.process_signal(data.reshape((-1,)), sampling_rate=sample_rate).values
+    else:
+        raise AttributeError('Data should be either ndarray or str. Got %s.'%(type(data)))
+    return extracted_features
+
 
 
 def cut_data_on_chunks(data:np.ndarray, chunk_length:int, window_step:int) -> List[np.ndarray]:

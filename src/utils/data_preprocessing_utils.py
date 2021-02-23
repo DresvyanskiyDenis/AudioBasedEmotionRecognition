@@ -117,6 +117,7 @@ def extract_opensmile_features_from_audio_sequence(data:Union[np.ndarray, str], 
         feature_level=opensmile.FeatureLevel.Functionals
     else:
         raise AttributeError('feature_type must be either \'Functionals\' or \'LLD\'. Got %s.'%(feature_type))
+    # create opensmile Extractor
     smile = opensmile.Smile(
         feature_set=opensmile.FeatureSet.ComParE_2016,
         feature_level=feature_level,

@@ -6,6 +6,7 @@
 from typing import Tuple, Union, Optional
 import tensorflow as tf
 import tensorflow.keras.backend as K
+
 __author__ = "Denis Dresvyanskiy"
 __copyright__ = "Copyright 2021"
 __credits__ = ["Denis Dresvyanskiy"]

@@ -16,6 +16,12 @@ from src.utils.label_preprocessing_utils import load_gold_shifted_labels, split_
 from src.utils.tf_utils import create_1d_cnn_model_classification, create_1d_cnn_model_regression, ccc_loss, \
     CCC_loss_tf, create_simple_RNN_network
 
+__author__ = "Denis Dresvyanskiy"
+__copyright__ = "Copyright 2021"
+__credits__ = ["Denis Dresvyanskiy"]
+__maintainer__ = "Denis Dresvyanskiy"
+__email__ = "denis.dresvyanskiy@uni-ulm.de"
+
 
 def load_and_split_labels(path:str) -> Dict[str,pd.DataFrame]:
     labels = load_gold_shifted_labels(path)

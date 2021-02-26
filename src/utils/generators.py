@@ -111,6 +111,7 @@ class AudioFixedChunksGenerator(tf.keras.utils.Sequence):
             return num_batches
 
     def __getitem__(self, index):
+
         pass
 
     def on_epoch_end(self):
@@ -120,6 +121,12 @@ class AudioFixedChunksGenerator(tf.keras.utils.Sequence):
             # TODO: so, what? How to shuffle it?
             pass
         pass
+
+    def _form_batches_of_indexes(self, data_mode:str):
+        if data_mode=='str':
+
+
+
 
     def _calculate_overall_size_of_data(self):
         """Calculates the overall size of data.

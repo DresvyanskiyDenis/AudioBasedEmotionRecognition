@@ -4,7 +4,7 @@
 
 """
 import random
-from typing import Optional, Dict, List, Tuple
+from typing import Optional, Dict, List, Tuple, Union
 
 import numpy as np
 import pandas as pd
@@ -17,24 +17,28 @@ __credits__ = ["Denis Dresvyanskiy"]
 __maintainer__ = "Denis Dresvyanskiy"
 __email__ = "denis.dresvyanskiy@uni-ulm.de"
 
-from src.utils.audio_preprocessing_utils import cut_data_on_chunks
+from src.utils.audio_preprocessing_utils import cut_data_on_chunks, load_wav_file, \
+    extract_opensmile_features_from_audio_sequence, extract_mfcc_from_audio_sequence
 
 Data_type_format=Dict[str, Tuple[np.ndarray, int]]
-
+data_preprocessing_types=('raw', 'LLD', 'EGEMAPS', 'MFCC')
 
 class AudioFixedChunksGenerator(tf.keras.utils.Sequence):
 
     num_chunks:int
     window_length:float
     load_mode:str
-    data:Optional[np.ndarray]
+    data:Data_type_format
     load_path: Optional[str]
-    data_preprocessing_mode:str
+    data_preprocessing_mode:Optional[str]
     labels:Dict[str,np.ndarray]
+    labels_type:str
+    num_mfcc:Optional[int]
 
     def __init__(self, sequence_max_length:float, window_length:float, load_mode:str='path',
-                 data:Optional[Data_type_format]=None, load_path:Optional[str]=None, data_preprocessing_mode:str='raw',
-                 labels:Dict[str, np.ndarray]=None, batch_size:int=32):
+                 data:Optional[Data_type_format]=None, load_path:Optional[str]=None,
+                 data_preprocessing_mode:Optional[str]='raw', num_mfcc:Optional[int]=128,
+                 labels:Dict[str, np.ndarray]=None, labels_type:str='sequence_to_one', batch_size:int=32):
         """Assigns basic values for data cutting and providing, loads labels, defines how data will be loaded
             and check if all the provided values are in appropriate format
 
@@ -61,6 +65,8 @@ class AudioFixedChunksGenerator(tf.keras.utils.Sequence):
         self.num_chunks=int(np.ceil(sequence_max_length/window_length))
         self.window_length=window_length
         self.batch_size=batch_size
+        self.num_mfcc=num_mfcc
+        self.labels_type=labels_type
         # check if load mode has an appropriate value
         if load_mode=='path':
             self.load_mode=load_mode
@@ -70,19 +76,24 @@ class AudioFixedChunksGenerator(tf.keras.utils.Sequence):
             else:
                 raise AttributeError('load_path must be a string path to the directory with data and label files. Got %s'%(load_path))
 
+            # check if data_preprocessing_mode has an appropriate value
+            if data_preprocessing_mode in data_preprocessing_types:
+                self.data_preprocessing_mode = data_preprocessing_mode
+            else:
+                raise AttributeError(
+                    'data_preprocessing_mode can be either \'raw\', \'LLD\', \'MFCC\'or \'EGEMAPS\'. Got %s.' % (
+                        data_preprocessing_mode))
+
         elif load_mode=='data':
             if isinstance(data, dict):
                 self.data=data
+                # cut provided data
+                self.data=self._cut_data_in_dict(self.data)
             else:
                 raise AttributeError('With \'data\' load mode the data should be in np.ndarray format. Got %s.'%(type(data)))
 
         else:
             raise AttributeError('load_mode can be either \'path\' or \'data\'. Got %s.'%(load_mode))
-        # check if data_preprocessing_mode has an appropriate value
-        if data_preprocessing_mode in ('raw', 'LLD', 'EGEMAPS'):
-            self.data_preprocessing_mode =data_preprocessing_mode
-        else:
-            raise AttributeError('data_preprocessing_mode can be either \'raw\' or \'LLD\', or \'EGEMAPS\'. Got %s.'%(data_preprocessing_mode))
         # check if labels are provided in an appropriate way
         if isinstance(labels, dict):
             if len(labels.keys())==0:
@@ -95,6 +106,10 @@ class AudioFixedChunksGenerator(tf.keras.utils.Sequence):
                 self.labels = labels
         else:
             raise AttributeError('Labels should be a dictionary in str->np.ndarray format.')
+
+        # form indexes for batching then
+        self.indexes=self._form_indexes(self.load_mode)
+
 
 
     def __len__(self) -> int:
@@ -111,24 +126,174 @@ class AudioFixedChunksGenerator(tf.keras.utils.Sequence):
             return num_batches
 
     def __getitem__(self, index):
+        if self.load_mode=='path':
+            loaded_data, labels=self._form_batch_with_path_load_mode(index)
+            return loaded_data, labels
+        elif self.load_mode=='data':
+            # TODO: implement it
+            pass
 
+
+    def _form_batch_with_path_load_mode(self, index)-> Tuple[np.ndarray, np.ndarray]:
+        """Forms batch, which consists of data and labels chosen according index from shuffled self.indexes.
+           The data and labels slice depends on index and defined as index*self.batch_size:(index+1)*self.batch_size
+           Thus, index represents the number of slice.
+        :param index: int
+                    the number of slice
+        :return: Tuple[np.ndarray, np.ndarray]
+                    data and labels slice
+        """
+        # select batch_size indexes from randomly shuffled self.indexes
+        start_idx = index * self.batch_size
+        end_idx = (index + 1) * self.batch_size if (index + 1) * self.batch_size <= len(self.data_filenames) \
+            else len(self.data_filenames)
+        file_indexes_to_load = self.indexes[start_idx:end_idx]
+        # load every file and labels for it, preprocess them and concatenate
+        loaded_data=[]
+        labels=[]
+        for file_index in file_indexes_to_load:
+            # load
+            filename_path=os.path.join(self.load_path, self.data_filenames[file_index])
+            wav_file, sample_rate = self._load_wav_audiofile(filename_path)
+
+            # cut
+            wav_file = self._cut_sequence_on_slices(wav_file, sample_rate)
+
+            # preprocess (extracting features)
+            wav_file = self._preprocess_cut_audio(wav_file, sample_rate, self.data_preprocessing_mode, num_mfcc=self.num_mfcc)
+            # to concatenate wav_files we need to add new axis
+            wav_file=wav_file[np.newaxis, ...]
+            loaded_data.append(wav_file)
+            # append labels to labels list for next concatenation
+            corresponding_labels=self.labels[self.data_filenames[file_index]]
+            labels.append(corresponding_labels)
+        # concatenate elements in obtained lists
+        loaded_data=np.concatenate(loaded_data, axis=0)
+        labels=np.concatenate(labels, axis=0)
+        return loaded_data, labels
+
+    def _form_batch_with_data_load_mode(self, index)-> Tuple[np.ndarray, np.ndarray]:
+        # TODO: implement it
         pass
+
 
     def on_epoch_end(self):
         if self.load_mode=='path':
-            random.shuffle(self.data_filenames)
+            # TODO: implement it
+            pass
         elif self.load_mode=='data':
             # TODO: so, what? How to shuffle it?
             pass
         pass
 
-    def _form_batches_of_indexes(self, data_mode:str):
-        if data_mode=='str':
+    def _load_wav_audiofile(self, path) -> Tuple[np.ndarray, int]:
+        """Loads wav file according path
+
+        :param path: str
+                path to wav file
+        :return: Tuple[int, np.ndarray]
+                sample rate of file and values
+        """
+        sample_rate, wav_file=load_wav_file(path)
+        return wav_file, sample_rate
+
+    def _preprocess_raw_audio(self, raw_audio:np.ndarray, sample_rate:int,
+                              preprocess_type:str, num_mfcc:Optional[int]=None) -> np.ndarray:
+        """Preprocesses raw audio with 1 channel according chosen preprocess_type
+
+        :param raw_audio: np.ndarray
+                    raw audio in numpy format. Can be with shape (n_samples,) or (n_samples,1)
+        :param sample_rate: int
+                    sample rate of audio
+        :param preprocess_type: str
+                    which algorithm to choose to preprocess? The types are presented in variable data_preprocessing_types
+                    at the start of the script (where imports)
+        :param num_mfcc: int
+                    if preprocess_type=='MFCC', defines how much mfcc are needed.
+        :return: np.ndarray
+                    extracted features from audio
+        """
+        # check if raw_audio have 2 dimensions
+        if len(raw_audio.shape)!=2 and len(raw_audio.shape) ==1:
+            raw_audio=raw_audio[..., np.newaxis]
+        else:
+            raise AttributeError('raw_audio should be 1- or 2-dimensional. Got %i dimensions.'%(len(raw_audio.shape)))
+
+        if preprocess_type=='LLD':
+            preprocessed_audio=extract_opensmile_features_from_audio_sequence(raw_audio, sample_rate, preprocess_type)
+        elif preprocess_type=='MFCC':
+            preprocessed_audio=extract_mfcc_from_audio_sequence(raw_audio, sample_rate, num_mfcc)
+        elif preprocess_type=='EGEMAPS':
+            # TODO: implement EGEMAPS features extraction
+            raise Exception('Not implemented yet.')
+        else:
+            raise AttributeError('preprocess_type should be either \'LLD\', \'MFCC\' or \'EGEMAPS\'. Got %s.'%(preprocess_type))
+        return preprocessed_audio
+
+    def _preprocess_cut_audio(self, cut_audio:np.ndarray, sample_rate:int,
+                              preprocess_type:str, num_mfcc:Optional[int]=None) -> np.ndarray:
+        """ Extract defined in preprocess_type features from cut audio.
+
+        :param cut_audio: np.ndarray
+                    cut audio with shape (num_chunks, window_length, 1) or (num_chunks, window_length)
+        :param sample_rate: int
+                    sample rate of audio
+        :param preprocess_type: str
+                    which algorithm to choose to preprocess? The types are presented in variable data_preprocessing_types
+                    at the start of the script (where imports)
+        :param num_mfcc: int
+                    if preprocess_type=='MFCC', defines how much mfcc are needed.
+        :return: np.ndarray
+                    extracted from each window features. The output shape is (num_chunks, window_length, num_features)
+        """
+        chunks=[]
+        for chunk_idx in range(cut_audio.shape[0]):
+            chunk_extracted_features=[]
+            for window_idx in range(cut_audio.shape[1]):
+                extracted_features=self._preprocess_raw_audio(cut_audio[chunk_idx, window_idx], sample_rate,
+                                                              preprocess_type, num_mfcc)
+                chunk_extracted_features.append(extracted_features)
+            chunk_extracted_features=np.concatenate(chunk_extracted_features, axis=0)[np.newaxis,...]
+            chunks.append(chunk_extracted_features)
+        chunks=np.concatenate(chunks, axis=0)
+        return chunks
+
+    def _form_indexes(self, data_mode:str) -> List[Union[int, List[str, int]]]:
+        """Forms random indexes depend on data type was loaded.
+
+        :param data_mode: str
+                    can be either 'path' or 'data'.
+                    'path' means that files will be loaded on-the-fly according self.data_filenames array
+                    'data' means that files are already loaded and cut. However, they are located in
+                    dict[str, np.ndarray], so, to do batching fair, we will construct list[list[str, int]],
+                    where str - filename, which contains n number of cut samples and int - the index of this
+                    cut samples. Thus, we will provide randomly shuffled samples independent from filenames
+                    (means all samples of filenames will have the same chance to be included in batch).
+
+        :return: indexes
+                list[str] or list[list[str, int]], see the explanation above.
+        """
+        # if data_mode=='path', we simply make permutation of indexes of self.data_filenames
+        if data_mode=='path':
+            indexes=np.random.permutation(len(self.data_filenames)).tolist()
+            # if not (means that load mode is data), we make procedure described above
+        else:
+            indexes=[]
+            for key, value in self.data:
+                # extract values
+                data_array, sample_rate = value
+                filename = key
+                # make permutation for np.ndarray of particular filename
+                num_indexes=data_array.shape[0]
+                permutations=np.random.permutation(num_indexes)
+                # append indexes randomly permutated
+                for i in range(num_indexes):
+                    indexes.append([filename, permutations[i]])
+
+        return indexes
 
 
-
-
-    def _calculate_overall_size_of_data(self):
+    def _calculate_overall_size_of_data(self) -> int:
         """Calculates the overall size of data.
            It is assumed that self.data is in the format dict(str, np.ndarray), where
            np.ndarray has shape (Num_batches, num_chunks, window_size, num_features)
@@ -184,8 +349,12 @@ class AudioFixedChunksGenerator(tf.keras.utils.Sequence):
         cut_data=np.concatenate(cut_data, axis=0)
         return cut_data
 
-
-
+    def _cut_data_in_dict(self, data:Data_type_format)->Data_type_format:
+        for key, value in data:
+            array, sample_rate=value
+            array = self._cut_sequence_on_slices(array, sample_rate)
+            data[key]=(array, sample_rate)
+        return data
 
 
 

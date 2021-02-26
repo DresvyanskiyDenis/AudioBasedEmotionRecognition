@@ -31,7 +31,7 @@ def load_wav_file(path:str) -> Tuple[int,np.ndarray]:
 
 
 def extract_mfcc_from_audio_sequence(data:np.ndarray, sample_rate:int, num_mfcc:int,
-                                     length_fft:int, length_fft_step:int) -> np.ndarray:
+                                     length_fft:int=512, length_fft_step:int=256) -> np.ndarray:
     """Extracts features from given data ndarray with the help of librosa library.
     https://librosa.org/doc/main/generated/librosa.feature.mfcc.html
 
@@ -47,12 +47,12 @@ def extract_mfcc_from_audio_sequence(data:np.ndarray, sample_rate:int, num_mfcc:
     :param length_fft_step: int
                 the length of the step, on which the former window will be shifted
     :return: ndarray
-                extracted features with the shape (num_mfcc,?)
+                extracted features with the shape (?, num_mfcc)
                 the first dimension is computed by librosa and depends on length_fft and length_fft_step
     """
     mfcc_features=librosa.feature.mfcc(data, sr=sample_rate, n_mfcc=num_mfcc,
                                        n_fft=length_fft, hop_length=length_fft_step)
-    return mfcc_features
+    return mfcc_features.T
 
 def extract_opensmile_features_from_audio_sequence(data:Union[np.ndarray, str], sample_rate:Optional[int]=None, feature_type:str='LLD') -> np.ndarray:
     """Extracts opensmile ComParE_2016 features from audio sequence represented either by ndarray or path.

@@ -85,6 +85,7 @@ class AudioFixedChunksGenerator(tf.keras.utils.Sequence):
                         data_preprocessing_mode))
 
         elif load_mode=='data':
+            self.load_mode = load_mode
             if isinstance(data, dict):
                 self.data=data
                 # cut provided data
@@ -291,7 +292,7 @@ class AudioFixedChunksGenerator(tf.keras.utils.Sequence):
         chunks=np.concatenate(chunks, axis=0)
         return chunks
 
-    def _form_indexes(self, data_mode:str) -> List[Union[int, List[str, int]]]:
+    def _form_indexes(self, data_mode:str) -> List[Union[int, Tuple[str, int]]]:
         """Forms random indexes depend on data type was loaded.
 
         :param data_mode: str
@@ -321,7 +322,7 @@ class AudioFixedChunksGenerator(tf.keras.utils.Sequence):
                 permutations=np.random.permutation(num_indexes)
                 # append indexes randomly permutated
                 for i in range(num_indexes):
-                    indexes.append([filename, permutations[i]])
+                    indexes.append((filename, permutations[i]))
 
         return indexes
 

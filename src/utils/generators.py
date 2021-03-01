@@ -22,6 +22,7 @@ from src.utils.audio_preprocessing_utils import cut_data_on_chunks, load_wav_fil
 
 Data_type_format=Dict[str, Tuple[np.ndarray, int]]
 data_preprocessing_types=('raw', 'LLD', 'EGEMAPS', 'MFCC')
+labels_types=('sequence_to_one',)
 
 class AudioFixedChunksGenerator(tf.keras.utils.Sequence):
 
@@ -59,14 +60,13 @@ class AudioFixedChunksGenerator(tf.keras.utils.Sequence):
         :param labels: Dict[str, np.ndarray]
                     labels for data. dictionary represents mapping str -> np.ndarray, where
                     str denotes filename and np.ndarray denotes label on each timestep, or 1 label per whole filename,
-                    thus, shape of np.ndarray will be (1,1)
+                    thus, shape of np.ndarray will be (1,)
         :param batch_size: int
         """
         self.num_chunks=int(np.ceil(sequence_max_length/window_length))
         self.window_length=window_length
         self.batch_size=batch_size
         self.num_mfcc=num_mfcc
-        self.labels_type=labels_type
         # check if load mode has an appropriate value
         if load_mode=='path':
             self.load_mode=load_mode
@@ -106,6 +106,11 @@ class AudioFixedChunksGenerator(tf.keras.utils.Sequence):
                 self.labels = labels
         else:
             raise AttributeError('Labels should be a dictionary in str->np.ndarray format.')
+        # check if labels_type is provided in appropriate way
+        if labels_type in labels_types:
+            self.labels_type = labels_type
+        else:
+            raise AttributeError('Labels_type can be either \'sequence_to_one\' or \'sequence_to_sequence\'. Got %s.'%(labels_type))
 
         # form indexes for batching then
         self.indexes=self._form_indexes(self.load_mode)
@@ -130,11 +135,19 @@ class AudioFixedChunksGenerator(tf.keras.utils.Sequence):
             loaded_data, labels=self._form_batch_with_path_load_mode(index)
             return loaded_data, labels
         elif self.load_mode=='data':
-            # TODO: implement it
-            pass
+            data, labels = self._form_batch_with_data_load_mode(index)
+            return data, labels
+
+    def on_epoch_end(self):
+        """Do some actions at the end of epoch.
+           We use random.shuddle function to shuffle list of indexes presented via self.indexes
+        :return: None
+        """
+        self.indexes= random.shuffle(self.indexes)
 
 
-    def _form_batch_with_path_load_mode(self, index)-> Tuple[np.ndarray, np.ndarray]:
+
+    def _form_batch_with_path_load_mode(self, index:int)-> Tuple[np.ndarray, np.ndarray]:
         """Forms batch, which consists of data and labels chosen according index from shuffled self.indexes.
            The data and labels slice depends on index and defined as index*self.batch_size:(index+1)*self.batch_size
            Thus, index represents the number of slice.
@@ -172,19 +185,39 @@ class AudioFixedChunksGenerator(tf.keras.utils.Sequence):
         labels=np.concatenate(labels, axis=0)
         return loaded_data, labels
 
-    def _form_batch_with_data_load_mode(self, index)-> Tuple[np.ndarray, np.ndarray]:
-        # TODO: implement it
-        pass
+    def _form_batch_with_data_load_mode(self, index:int)-> Tuple[np.ndarray, np.ndarray]:
+        """Forms batch, which consists of data and labels chosen according index from shuffled self.indexes.
+           The data and labels slice depends on index and defined as index*self.batch_size:(index+1)*self.batch_size
+           Thus, index represents the number of slice.
 
+        :param index: int
+                    the number of slice
+        :return: Tuple[np.ndarray, np.ndarray]
+                    data and labels slice
+        """
+        # select batch_size indexes from randomly shuffled self.indexes
+        start_idx = index * self.batch_size
+        end_idx = (index + 1) * self.batch_size if (index + 1) * self.batch_size <= len(self.indexes) \
+            else len(self.indexes)
+        indexes_to_load=self.indexes[start_idx:end_idx]
+        # form already loaded data and labels in batch
+        batch_data=[]
+        batch_labels=[]
+        for chosen_idx in indexes_to_load:
+            filename, chunk_idx=chosen_idx
+            # self.data[filename][0][np.newaxis,...] :
+            # > self.data[filename] provides us (np.ndarray, sample_rate) according to filename
+            # > self.data[filename][0] provides us np.ndarray with shape (num_chunks, window_size, num_features)
+            # > self.data[filename][0][np.newaxis,...] expand array to add new axis for success concatenation further
+            current_data=self.data[filename][0][np.newaxis,...]
+            current_labels=self.labels[filename][np.newaxis,...]
+            batch_data.append(current_data)
+            batch_labels.append(current_labels)
+        # concatenate extracted data and labels
+        batch_data=np.concatenate(batch_data, axis=0)
+        batch_labels=np.concatenate(batch_labels, axis=0)
+        return batch_data, batch_labels
 
-    def on_epoch_end(self):
-        if self.load_mode=='path':
-            # TODO: implement it
-            pass
-        elif self.load_mode=='data':
-            # TODO: so, what? How to shuffle it?
-            pass
-        pass
 
     def _load_wav_audiofile(self, path) -> Tuple[np.ndarray, int]:
         """Loads wav file according path
@@ -225,7 +258,7 @@ class AudioFixedChunksGenerator(tf.keras.utils.Sequence):
             preprocessed_audio=extract_mfcc_from_audio_sequence(raw_audio, sample_rate, num_mfcc)
         elif preprocess_type=='EGEMAPS':
             # TODO: implement EGEMAPS features extraction
-            raise Exception('Not implemented yet.')
+            raise Exception('EGEMAPS are not implemented yet.')
         else:
             raise AttributeError('preprocess_type should be either \'LLD\', \'MFCC\' or \'EGEMAPS\'. Got %s.'%(preprocess_type))
         return preprocessed_audio
@@ -355,6 +388,7 @@ class AudioFixedChunksGenerator(tf.keras.utils.Sequence):
             array = self._cut_sequence_on_slices(array, sample_rate)
             data[key]=(array, sample_rate)
         return data
+
 
 
 

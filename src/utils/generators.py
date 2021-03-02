@@ -169,6 +169,9 @@ class AudioFixedChunksGenerator(tf.keras.utils.Sequence):
             # load
             filename_path=os.path.join(self.load_path, self.data_filenames[file_index])
             wav_file, sample_rate = self._load_wav_audiofile(filename_path)
+            #check if audio has no channels
+            if len(wav_file.shape)==1:
+                wav_file=wav_file[..., np.newaxis]
 
             # cut
             wav_file = self._cut_sequence_on_slices(wav_file, sample_rate)
@@ -248,9 +251,9 @@ class AudioFixedChunksGenerator(tf.keras.utils.Sequence):
                     extracted features from audio
         """
         # check if raw_audio have 2 dimensions
-        if len(raw_audio.shape)!=2 and len(raw_audio.shape) ==1:
+        if len(raw_audio.shape) ==1:
             raw_audio=raw_audio[..., np.newaxis]
-        else:
+        elif len(raw_audio.shape)!=2:
             raise AttributeError('raw_audio should be 1- or 2-dimensional. Got %i dimensions.'%(len(raw_audio.shape)))
 
         if preprocess_type=='LLD':
@@ -282,13 +285,9 @@ class AudioFixedChunksGenerator(tf.keras.utils.Sequence):
         """
         chunks=[]
         for chunk_idx in range(cut_audio.shape[0]):
-            chunk_extracted_features=[]
-            for window_idx in range(cut_audio.shape[1]):
-                extracted_features=self._preprocess_raw_audio(cut_audio[chunk_idx, window_idx], sample_rate,
-                                                              preprocess_type, num_mfcc)
-                chunk_extracted_features.append(extracted_features)
-            chunk_extracted_features=np.concatenate(chunk_extracted_features, axis=0)[np.newaxis,...]
-            chunks.append(chunk_extracted_features)
+            extracted_features=self._preprocess_raw_audio(cut_audio[chunk_idx], sample_rate,
+                                                          preprocess_type, num_mfcc)
+            chunks.append(extracted_features[np.newaxis,...])
         chunks=np.concatenate(chunks, axis=0)
         return chunks
 
@@ -371,7 +370,7 @@ class AudioFixedChunksGenerator(tf.keras.utils.Sequence):
         # evaluate window length and step in terms of units (indexes of arrays).
         # self.window_length is presented initially  in seconds
         window_length_in_units=int(self.window_length*sample_rate)
-        window_step_in_units=int((sequence.shape[0]-window_length_in_units)/(self.num_chunks-1))
+        window_step_in_units=int(np.ceil((sequence.shape[0]-window_length_in_units)/(self.num_chunks-1)))
         # cut data with special function in audio_preprocessing_utils.py
         cut_data=cut_data_on_chunks(data=sequence, chunk_length=window_length_in_units, window_step=window_step_in_units)
         # check if we got as much chunks as we wanted
@@ -380,7 +379,7 @@ class AudioFixedChunksGenerator(tf.keras.utils.Sequence):
                              'was computed in __init__() function. cut_data.shape[0]=%i, should be: %i'
                              %(len(cut_data), self.num_chunks))
         # concatenate cut chunks in np.ndarray
-        cut_data=np.concatenate(cut_data, axis=0)
+        cut_data=np.array(cut_data)
         return cut_data
 
     def _cut_data_in_dict(self, data:Data_type_format)->Data_type_format:

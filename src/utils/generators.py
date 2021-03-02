@@ -182,7 +182,7 @@ class AudioFixedChunksGenerator(tf.keras.utils.Sequence):
             wav_file=wav_file[np.newaxis, ...]
             loaded_data.append(wav_file)
             # append labels to labels list for next concatenation
-            corresponding_labels=self.labels[self.data_filenames[file_index]]
+            corresponding_labels=self.labels[self.data_filenames[file_index]][np.newaxis,...]
             labels.append(corresponding_labels)
         # concatenate elements in obtained lists
         loaded_data=np.concatenate(loaded_data, axis=0)
@@ -333,7 +333,7 @@ class AudioFixedChunksGenerator(tf.keras.utils.Sequence):
                     num_chunks is evaluated in self.__init__() function
                     window_size is evaluated in self.__init__() function
                     num_features is provided by data initially supplied
-            The reason that data has 4 dimensions is that it was cut on slices for algorithm
+            The reason that data has 4 dimensions is that it was cut on slices
 
         :return: int
             the overall size of data, evaluated across all entries in dict

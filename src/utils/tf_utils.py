@@ -122,7 +122,7 @@ def create_1d_cnn_model_regression(*,input_shape:Tuple[int,...],num_output_neuro
 def create_simple_RNN_network(*,input_shape:Tuple[int,...],num_output_neurons:int,
                               neurons_on_layer: Tuple[int, ...] = (256, 256),
                               rnn_type:str='LSTM',
-                              dnn_layers: Tuple[int,],
+                              dnn_layers: Tuple[int,...],
                               need_regularization: bool = False,
                               dropout: bool = False) -> tf.keras.Model:
     """ Creates RNN neural network according to provided parameters
@@ -179,6 +179,44 @@ def create_simple_RNN_network(*,input_shape:Tuple[int,...],num_output_neurons:in
     model= tf.keras.Model(inputs=[input], outputs=[output])
     return model
 
+def chunk_based_rnn_model(*,input_shape:Tuple[int,...],num_output_neurons:int,
+                          neurons_on_layer: Tuple[int, ...] = (256, 256),
+                          rnn_type: str = 'LSTM',
+                          need_regularization: bool = False,
+                          dropout: bool = False
+                          ):
+    if len(input_shape)!=3:
+        raise AttributeError('input shape must be 3-dimensional. Got %i'%(len(input_shape)))
+    # define rnn rnn_type
+    if rnn_type == 'simple':
+        layer_type = tf.keras.layers.SimpleRNN
+    elif rnn_type == 'LSTM':
+        layer_type = tf.keras.layers.LSTM
+    elif rnn_type == 'GRU':
+        layer_type = tf.keras.layers.GRU
+    else:
+        raise AttributeError('rnn_type should be either \'simple\', \'LSTM\' or \'GRU\'. Got %s' % (rnn_type))
+    regularization = tf.keras.regularizers.l2(1e-5) if need_regularization else None
+
+    # building neural network
+    input=tf.keras.layers.Input(input_shape)
+    # rnn part
+    x = input
+    for layer_idx in range(len(neurons_on_layer) - 1):
+        neurons = neurons_on_layer[layer_idx]
+        x = tf.keras.layers.TimeDistributed(layer_type(neurons, return_sequences=True, kernel_regularizer=regularization))(x)
+        if dropout: x = tf.keras.layers.Dropout(0.2)(x)
+    # last RNN layer
+    x = tf.keras.layers.TimeDistributed(layer_type(neurons_on_layer[-1], return_sequences=True))(x)
+    #  average the last hidden states from different chunks with the help of 1x1 Conv2d
+    x = tf.keras.layers.Conv2D(1, 1, activation='relu')(x)
+    # squeeze the last dimension
+    x = tf.keras.layers.Reshape((x.shape[1:-1]))(x)
+    #
+
+    model=tf.keras.Model(inputs=[input], outputs=[x])
+    return model
+
 
 
 
@@ -221,4 +259,6 @@ def CCC_loss_tf(y_true, y_pred):
 
 
 if __name__=="__main__":
-    pass
+    model=chunk_based_rnn_model(input_shape=(24,46,65), num_output_neurons=1,
+    neurons_on_layer = (256, 256), rnn_type = 'LSTM')
+    model.summary()

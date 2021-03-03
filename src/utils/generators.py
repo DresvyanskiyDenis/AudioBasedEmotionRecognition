@@ -17,6 +17,8 @@ __credits__ = ["Denis Dresvyanskiy"]
 __maintainer__ = "Denis Dresvyanskiy"
 __email__ = "denis.dresvyanskiy@uni-ulm.de"
 
+from sklearn.preprocessing import StandardScaler
+
 from src.utils.audio_preprocessing_utils import cut_data_on_chunks, load_wav_file, \
     extract_opensmile_features_from_audio_sequence, extract_mfcc_from_audio_sequence
 
@@ -35,11 +37,13 @@ class AudioFixedChunksGenerator(tf.keras.utils.Sequence):
     labels:Dict[str,np.ndarray]
     labels_type:str
     num_mfcc:Optional[int]
+    normalization:bool
 
     def __init__(self, sequence_max_length:float, window_length:float, load_mode:str='path',
                  data:Optional[Data_type_format]=None, load_path:Optional[str]=None,
                  data_preprocessing_mode:Optional[str]='raw', num_mfcc:Optional[int]=128,
-                 labels:Dict[str, np.ndarray]=None, labels_type:str='sequence_to_one', batch_size:int=32):
+                 labels:Dict[str, np.ndarray]=None, labels_type:str='sequence_to_one', batch_size:int=32,
+                 normalization:bool=False, one_hot_labeling:Optional[bool]=None, num_classes:Optional[int]=None):
         """Assigns basic values for data cutting and providing, loads labels, defines how data will be loaded
             and check if all the provided values are in appropriate format
 
@@ -62,11 +66,22 @@ class AudioFixedChunksGenerator(tf.keras.utils.Sequence):
                     str denotes filename and np.ndarray denotes label on each timestep, or 1 label per whole filename,
                     thus, shape of np.ndarray will be (1,)
         :param batch_size: int
+
+        :param normalization: bool
+                    Apply normalization to the features before yielding or not.
+        :param one_hot_labeling: Optional[bool]
+                    Apply one hot labeling to the output labels or not.
+        :param num_classes: Optional[int]
+                    if one_hot_labeling is True, supplies the number of classes to generate one-hot label
         """
         self.num_chunks=int(np.ceil(sequence_max_length/window_length))
         self.window_length=window_length
         self.batch_size=batch_size
         self.num_mfcc=num_mfcc
+        self.normalization = normalization
+        self.one_hot_labeling=one_hot_labeling
+        self.num_classes=num_classes
+
         # check if load mode has an appropriate value
         if load_mode=='path':
             self.load_mode=load_mode
@@ -113,6 +128,11 @@ class AudioFixedChunksGenerator(tf.keras.utils.Sequence):
         else:
             raise AttributeError('Labels_type can be either \'sequence_to_one\' or \'sequence_to_sequence\'. Got %s.'%(labels_type))
 
+        # check if one_hot_labeling and num_classes are proveded either both or not
+        if one_hot_labeling:
+            if num_classes==None:
+                raise AttributeError('If ine_hot_labeling=True, the number of classes should be provided. Got %i.'%(num_classes))
+
         # form indexes for batching then
         self.indexes=self._form_indexes(self.load_mode)
 
@@ -134,18 +154,44 @@ class AudioFixedChunksGenerator(tf.keras.utils.Sequence):
     def __getitem__(self, index):
         if self.load_mode=='path':
             loaded_data, labels=self._form_batch_with_path_load_mode(index)
+            if self.normalization:
+                loaded_data = self.normalize_batch_of_chunks(loaded_data)
+            if self.one_hot_labeling:
+                labels=tf.keras.utils.to_categorical(labels, num_classes=self.num_classes)
             return loaded_data, labels
+
         elif self.load_mode=='data':
             data, labels = self._form_batch_with_data_load_mode(index)
+            if self.normalization:
+                data = self.normalize_batch_of_chunks(data)
             return data, labels
 
     def on_epoch_end(self):
         """Do some actions at the end of epoch.
-           We use random.shuddle function to shuffle list of indexes presented via self.indexes
+           We use random.shuffle function to shuffle list of indexes presented via self.indexes
         :return: None
         """
         self.indexes= random.shuffle(self.indexes)
 
+
+    def normalize_batch_of_chunks(self, batch_of_chunks:np.ndarray) -> np.ndarray:
+        """Normalizes a batch of chunks via StandardScaler() normalizer.
+        https://scikit-learn.org/stable/modules/generated/sklearn.preprocessing.StandardScaler.html
+
+        :param batch_of_chunks: np.ndarray
+                    ndarray with shape (batch_size, num_chunks, window_size, num_features)
+        :return: np.ndarray
+                    ndarray with the same shape as batch_of_chunks
+        """
+        # reshape array to 2D (window_num, num_features)
+        array_to_normalize = batch_of_chunks.reshape((-1, batch_of_chunks.shape[3]))
+        # create scaler
+        normalizer = StandardScaler()
+        # fit and transform data
+        array_to_normalize = normalizer.fit_transform(array_to_normalize)
+        # reshape obtained data back to initial shape
+        result_array = array_to_normalize.reshape(batch_of_chunks.shape)
+        return result_array
 
 
     def _form_batch_with_path_load_mode(self, index:int)-> Tuple[np.ndarray, np.ndarray]:
@@ -182,7 +228,7 @@ class AudioFixedChunksGenerator(tf.keras.utils.Sequence):
             wav_file=wav_file[np.newaxis, ...]
             loaded_data.append(wav_file)
             # append labels to labels list for next concatenation
-            corresponding_labels=self.labels[self.data_filenames[file_index]][np.newaxis,...]
+            corresponding_labels=self.labels[self.data_filenames[file_index]]
             labels.append(corresponding_labels)
         # concatenate elements in obtained lists
         loaded_data=np.concatenate(loaded_data, axis=0)

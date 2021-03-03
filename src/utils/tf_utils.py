@@ -209,12 +209,16 @@ def chunk_based_rnn_model(*,input_shape:Tuple[int,...],num_output_neurons:int,
     # last RNN layer
     x = tf.keras.layers.TimeDistributed(layer_type(neurons_on_layer[-1], return_sequences=True))(x)
     #  average the last hidden states from different chunks with the help of 1x1 Conv2d
+    x = tf.keras.layers.Conv2D(64, 1, activation='relu')(x)
     x = tf.keras.layers.Conv2D(1, 1, activation='relu')(x)
     # squeeze the last dimension
     x = tf.keras.layers.Reshape((x.shape[1:-1]))(x)
-    #
+    # average the second dimension - we will get averaged by timesteps results for every 'features' (last channel)
+    x = tf.keras.layers.GlobalAveragePooling1D()(x)
+    x = tf.keras.layers.Dense(64, activation='relu')(x)
+    output = tf.keras.layers.Dense(num_output_neurons, activation='softmax')(x)
 
-    model=tf.keras.Model(inputs=[input], outputs=[x])
+    model=tf.keras.Model(inputs=[input], outputs=[output])
     return model
 
 
@@ -259,6 +263,4 @@ def CCC_loss_tf(y_true, y_pred):
 
 
 if __name__=="__main__":
-    model=chunk_based_rnn_model(input_shape=(24,46,65), num_output_neurons=1,
-    neurons_on_layer = (256, 256), rnn_type = 'LSTM')
-    model.summary()
+    pass

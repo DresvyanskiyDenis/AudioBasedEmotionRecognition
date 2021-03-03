@@ -6,6 +6,7 @@ import pandas as pd
 import numpy as np
 
 from src.utils.generators import AudioFixedChunksGenerator
+from src.utils.tf_utils import chunk_based_rnn_model
 
 
 def read_labels(path:str) -> Dict[str, np.ndarray]:
@@ -20,16 +21,33 @@ def read_labels(path:str) -> Dict[str, np.ndarray]:
 
 
 if __name__ == '__main__':
-    path_to_data='E:\\Databases\\Compare_2021_ESS\\wav\\train\\'
-    path_to_labels='E:\\Databases\\Compare_2021_ESS\\lab\\train.csv'
+    path_to_data='D:\\Databases\\Compare_2021_ESS\\wav\\train\\'
+    path_to_labels='D:\\Databases\\Compare_2021_ESS\\lab\\train.csv'
+    # params
+    sequence_max_length = 12
+    window_length = 0.5
+    num_chunks = int(sequence_max_length / window_length)
+    num_classes=3
+    data_preprocessing_mode = 'LLD'
+    label_type = 'sequence_to_one'
+    batch_size = 4
+
     labels=read_labels(path_to_labels)
-    generator = AudioFixedChunksGenerator(sequence_max_length=12, window_length=0.5,
+    generator = AudioFixedChunksGenerator(sequence_max_length=sequence_max_length, window_length=window_length,
                                           load_mode='path',
                                           load_path=path_to_data,
-                                          data_preprocessing_mode='LLD',
-                                          labels=labels, labels_type='sequence_to_one', batch_size=4)
-    a=1+2
+                                          data_preprocessing_mode=data_preprocessing_mode,
+                                          labels=labels, labels_type='sequence_to_one', batch_size=batch_size,
+                                          normalization=True, one_hot_labeling=True, num_classes=3)
 
+    model=chunk_based_rnn_model(input_shape=(num_chunks,46,65), num_output_neurons=num_classes,
+    neurons_on_layer = (256, 256), rnn_type = 'LSTM')
+    model.summary()
+    model.compile(optimizer=tf.keras.optimizers.Adam(0.001), loss='categorical_crossentropy')
 
-
+    model.fit(generator, epochs=10)
+    '''
+    for x,y in generator:
+        loss=model.train_on_batch(x, y)
+        print(loss)'''
 

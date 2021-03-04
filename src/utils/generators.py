@@ -171,7 +171,7 @@ class AudioFixedChunksGenerator(tf.keras.utils.Sequence):
            We use random.shuffle function to shuffle list of indexes presented via self.indexes
         :return: None
         """
-        self.indexes= random.shuffle(self.indexes)
+        random.shuffle(self.indexes)
 
 
     def normalize_batch_of_chunks(self, batch_of_chunks:np.ndarray) -> np.ndarray:
@@ -305,7 +305,8 @@ class AudioFixedChunksGenerator(tf.keras.utils.Sequence):
         if preprocess_type=='LLD':
             preprocessed_audio=extract_opensmile_features_from_audio_sequence(raw_audio, sample_rate, preprocess_type)
         elif preprocess_type=='MFCC':
-            preprocessed_audio=extract_mfcc_from_audio_sequence(raw_audio, sample_rate, num_mfcc)
+            audio_to_preprocess = raw_audio if raw_audio.shape[1]>1 else raw_audio.reshape((-1,))
+            preprocessed_audio=extract_mfcc_from_audio_sequence(audio_to_preprocess.astype('float32'), sample_rate, num_mfcc)
         elif preprocess_type=='EGEMAPS':
             # TODO: implement EGEMAPS features extraction
             raise Exception('EGEMAPS are not implemented yet.')

@@ -183,7 +183,8 @@ def chunk_based_rnn_model(*,input_shape:Tuple[int,...],num_output_neurons:int,
                           neurons_on_layer: Tuple[int, ...] = (256, 256),
                           rnn_type: str = 'LSTM',
                           need_regularization: bool = False,
-                          dropout: bool = False
+                          dropout: bool = False,
+                          dropout_rate=0.5
                           ):
     if len(input_shape)!=3:
         raise AttributeError('input shape must be 3-dimensional. Got %i'%(len(input_shape)))
@@ -196,25 +197,27 @@ def chunk_based_rnn_model(*,input_shape:Tuple[int,...],num_output_neurons:int,
         layer_type = tf.keras.layers.GRU
     else:
         raise AttributeError('rnn_type should be either \'simple\', \'LSTM\' or \'GRU\'. Got %s' % (rnn_type))
-    regularization = tf.keras.regularizers.l2(1e-5) if need_regularization else None
+    regularization = tf.keras.regularizers.l2(1e-4) if need_regularization else None
 
     # building neural network
     input=tf.keras.layers.Input(input_shape)
     # rnn part
     x = input
-    for layer_idx in range(len(neurons_on_layer) - 1):
+    for layer_idx in range(len(neurons_on_layer)):
         neurons = neurons_on_layer[layer_idx]
         x = tf.keras.layers.TimeDistributed(layer_type(neurons, return_sequences=True, kernel_regularizer=regularization))(x)
-        if dropout: x = tf.keras.layers.Dropout(0.2)(x)
-    # last RNN layer
-    x = tf.keras.layers.TimeDistributed(layer_type(neurons_on_layer[-1], return_sequences=True))(x)
+        if dropout: x = tf.keras.layers.Dropout(dropout_rate)(x)
     #  average the last hidden states from different chunks with the help of 1x1 Conv2d
-    x = tf.keras.layers.Conv2D(64, 1, activation='relu')(x)
-    x = tf.keras.layers.Conv2D(1, 1, activation='relu')(x)
+    x = tf.keras.layers.Conv2D(64, 1, activation='tanh')(x)
+    if dropout: x = tf.keras.layers.Dropout(dropout_rate)(x)
+    x = tf.keras.layers.Conv2D(1, 1, activation='tanh')(x)
     # squeeze the last dimension
     x = tf.keras.layers.Reshape((x.shape[1:-1]))(x)
     # average the second dimension - we will get averaged by timesteps results for every 'features' (last channel)
-    x = tf.keras.layers.GlobalAveragePooling1D()(x)
+    x = layer_type(128, return_sequences=True, kernel_regularizer=regularization)(x)
+    if dropout: x = tf.keras.layers.Dropout(dropout_rate)(x)
+    x = layer_type(128, kernel_regularizer=regularization)(x)
+    #x = tf.keras.layers.GlobalAveragePooling1D()(x)
     x = tf.keras.layers.Dense(64, activation='relu')(x)
     output = tf.keras.layers.Dense(num_output_neurons, activation='softmax')(x)
 

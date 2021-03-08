@@ -54,7 +54,8 @@ def extract_mfcc_from_audio_sequence(data:np.ndarray, sample_rate:int, num_mfcc:
                                        n_fft=length_fft, hop_length=length_fft_step)
     return mfcc_features.T
 
-def extract_opensmile_features_from_audio_sequence(data:Union[np.ndarray, str], sample_rate:Optional[int]=None, feature_type:str='LLD') -> np.ndarray:
+def extract_opensmile_features_from_audio_sequence(data:Union[np.ndarray, str], sample_rate:Optional[int]=None,
+                                                   feature_type:str='LLD') -> np.ndarray:
     """Extracts opensmile ComParE_2016 features from audio sequence represented either by ndarray or path.
     https://github.com/audeering/opensmile-python
 
@@ -140,6 +141,40 @@ def extract_HLDs_from_LLDs(LLDs:np.ndarray, window_size:float, window_step:float
         result_array.append(calculated_HLDs)
     return result_array
 
+def extract_subwindow_EGEMAPS_from_audio_sequence(sequence:np.ndarray, sample_rate:int,
+                                                      subwindow_size:float, subwindow_step:float) -> np.ndarray:
+    """
+
+    :param sequence: np.ndarray
+                represents the secuence of raw audio
+    :param sample_rate: int
+                the sample rate of provided audio
+    :param subwindow_size: float
+            the size of window for extracting EGEMAPS with the help of opensmile lib
+            It is fraction, which denotes the percentage of full length of sequence
+            for example, 0.1 means 10% of full length of sequence
+    :param subwindow_step: float
+            the size of shift of window every step. The float number means percentages of
+            full length of sequence as well.
+    :return: np.ndarray
+            the numpy array with shape (num_windows, num_EGEMAPS_features). It can be further interpreted as
+            (timesteps, num_EGEMAPS_features) as well.
+    """
+    # calculate sizes of step and window in units (indexes)
+    window_size_in_units = int(subwindow_size * sequence.shape[0])
+    window_step_in_units = int(subwindow_step * sequence.shape[0])
+    # cut LLDs on windows
+    cut_sequence = cut_data_on_chunks(sequence, window_size_in_units, window_step_in_units)
+    # extract HLDs for each window
+    result_array = []
+    for subwindow_idx in range(len(cut_sequence)):
+        calculated_subwindow_egemaps=extract_opensmile_features_from_audio_sequence(cut_sequence[subwindow_idx],
+                                                                                    sample_rate, feature_type='EGEMAPS')
+        result_array.append(calculated_subwindow_egemaps)
+    result_array=np.concatenate(result_array, axis=0)
+    return result_array
+
+
 def cut_data_on_chunks(data:np.ndarray, chunk_length:int, window_step:int) -> List[np.ndarray]:
     """Cuts data on chunks according to supplied chunk_length and windows_step.
         Example:
@@ -182,7 +217,7 @@ def cut_data_on_chunks(data:np.ndarray, chunk_length:int, window_step:int) -> Li
 if __name__=='__main__':
     path=r'E:\Databases\SEWA\Original\audio\SEW1101.wav'
     sr, data=load_wav_file(path)
-    extracted_LLDs=extract_opensmile_features_from_audio_sequence(data, sr, feature_type="LLD")
+    extracted_LLDs=cut_data_on_chunks(data,48000, 24000)
     print(extracted_LLDs)
-    extracted_HLDs=extract_HLDs_from_LLDs(extracted_LLDs, 0.01, 0.005, required_HLDs=('min','max','std'))
+    extracted_HLDs=extract_subwindow_EGEMAPS_from_audio_sequence(extracted_LLDs[0],sr, 0.1, 0.05)
 

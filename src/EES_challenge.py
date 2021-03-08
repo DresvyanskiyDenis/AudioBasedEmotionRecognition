@@ -31,7 +31,7 @@ if __name__ == '__main__':
     window_length = 0.5
     num_chunks = int(sequence_max_length / window_length)
     num_classes=3
-    data_preprocessing_mode = 'MFCC'
+    data_preprocessing_mode = 'EGEMAPS'
     label_type = 'sequence_to_one'
     batch_size = 16
     num_mfcc=128
@@ -43,7 +43,8 @@ if __name__ == '__main__':
                                           load_path=path_to_train_data,
                                           data_preprocessing_mode=data_preprocessing_mode, num_mfcc=num_mfcc,
                                           labels=train_labels, labels_type='sequence_to_one', batch_size=batch_size,
-                                          normalization=True, one_hot_labeling=True, num_classes=num_classes)
+                                          normalization=True, one_hot_labeling=True, num_classes=num_classes,
+                                          subwindow_size=0.25, subwindow_step=0.1)
 
     # validation data
     devel_labels=read_labels(path_to_devel_labels)

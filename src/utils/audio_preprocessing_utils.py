@@ -65,23 +65,32 @@ def extract_opensmile_features_from_audio_sequence(data:Union[np.ndarray, str], 
     :return: np.ndarray
                 extracted features
     """
-    # check if feature_type is supported
+    supported_feature_types=('LLD', 'Compare_2016_functionals','EGEMAPS')
+    if not feature_type in supported_feature_types:
+        raise AttributeError('feature_type must the value from %s. Got %s.' % (supported_feature_types,feature_type))
+    # configure opensmile to extract desirable features
     if feature_type == 'LLD':
         feature_level=opensmile.FeatureLevel.LowLevelDescriptors
+        feature_set=opensmile.FeatureSet.ComParE_2016
     elif feature_type == 'Functionals':
         feature_level=opensmile.FeatureLevel.Functionals
-    else:
-        raise AttributeError('feature_type must be either \'Functionals\' or \'LLD\'. Got %s.'%(feature_type))
+        feature_set = opensmile.FeatureSet.ComParE_2016
+    elif feature_type == 'EGEMAPS':
+        feature_level=opensmile.FeatureLevel.Functionals
+        feature_set = opensmile.FeatureSet.eGeMAPSv02
     # create opensmile Extractor
     smile = opensmile.Smile(
-        feature_set=opensmile.FeatureSet.ComParE_2016,
+        feature_set=feature_set,
         feature_level=feature_level,
     )
     # check if data is a valid type and if yes, extract features properly
     if isinstance(data,str):
         extracted_features = smile.process_file(data).values
     elif isinstance(data, np.ndarray):
-        extracted_features = smile.process_signal(data.reshape((-1,)), sampling_rate=sample_rate).values
+        # check if audio data is one-channel, then reshape it to 1D array (the requirement of opensmile)
+        if len(data.shape)==2 and data.shape[1]==1:
+            data=data.reshape((-1,))
+        extracted_features = smile.process_signal(data, sampling_rate=sample_rate).values
     else:
         raise AttributeError('Data should be either ndarray or str. Got %s.'%(type(data)))
     return extracted_features

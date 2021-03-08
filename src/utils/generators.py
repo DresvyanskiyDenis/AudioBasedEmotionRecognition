@@ -20,10 +20,11 @@ __email__ = "denis.dresvyanskiy@uni-ulm.de"
 from sklearn.preprocessing import StandardScaler
 
 from src.utils.audio_preprocessing_utils import cut_data_on_chunks, load_wav_file, \
-    extract_opensmile_features_from_audio_sequence, extract_mfcc_from_audio_sequence
+    extract_opensmile_features_from_audio_sequence, extract_mfcc_from_audio_sequence, \
+    extract_subwindow_EGEMAPS_from_audio_sequence
 
 Data_type_format=Dict[str, Tuple[np.ndarray, int]]
-data_preprocessing_types=('raw', 'LLD', 'EGEMAPS', 'MFCC')
+data_preprocessing_types=('raw', 'LLD', 'HLD','EGEMAPS', 'MFCC')
 labels_types=('sequence_to_one',)
 
 class AudioFixedChunksGenerator(tf.keras.utils.Sequence):
@@ -38,12 +39,15 @@ class AudioFixedChunksGenerator(tf.keras.utils.Sequence):
     labels_type:str
     num_mfcc:Optional[int]
     normalization:bool
+    subwindow_size:Optional[float]
+    subwindow_step:Optional[float]
 
-    def __init__(self, sequence_max_length:float, window_length:float, load_mode:str='path',
+    def __init__(self, *,sequence_max_length:float, window_length:float, load_mode:str='path',
                  data:Optional[Data_type_format]=None, load_path:Optional[str]=None,
                  data_preprocessing_mode:Optional[str]='raw', num_mfcc:Optional[int]=128,
                  labels:Dict[str, np.ndarray]=None, labels_type:str='sequence_to_one', batch_size:int=32,
-                 normalization:bool=False, one_hot_labeling:Optional[bool]=None, num_classes:Optional[int]=None):
+                 normalization:bool=False, one_hot_labeling:Optional[bool]=None, num_classes:Optional[int]=None,
+                 subwindow_size:Optional[float]=None, subwindow_step:Optional[float]=None):
         """Assigns basic values for data cutting and providing, loads labels, defines how data will be loaded
             and check if all the provided values are in appropriate format
 
@@ -60,7 +64,7 @@ class AudioFixedChunksGenerator(tf.keras.utils.Sequence):
         :param load_path: Optional[str]
                     if load_mode is 'path', then the path to the files must be provided
         :param data_preprocessing_mode: str
-                    can be either 'raw', 'LLD', or 'EGEMAPS'.
+                    can be one of ('raw', 'LLD', 'HLD','EGEMAPS', 'MFCC')
         :param labels: Dict[str, np.ndarray]
                     labels for data. dictionary represents mapping str -> np.ndarray, where
                     str denotes filename and np.ndarray denotes label on each timestep, or 1 label per whole filename,
@@ -73,7 +77,18 @@ class AudioFixedChunksGenerator(tf.keras.utils.Sequence):
                     Apply one hot labeling to the output labels or not.
         :param num_classes: Optional[int]
                     if one_hot_labeling is True, supplies the number of classes to generate one-hot label
+        :param subwindow_size: Optional[float]
+                    if data_preprocessing_mode equals either 'HLD' or 'EGEMAPS', then
+                    specifies the size of subwindows to extract high-level descriptors or EGEMAPS from each subwindow
+                    For example, if we have the cut chunk of data with shape (num_timesteps, num_features), then it
+                    will be transformed/recomputed to (num_windows, num_defined_HLDs*num_features), e. g. chunk of data with
+                    shape (100, 10) and subwindow_size = 0.1, subwindow_step=0.05 and (max, min, mean, std) functionals
+                    will be transformed to (19, 40) array.
+        :param subwindow_step: Optional[float]
+                    if data_preprocessing_mode equals either 'HLD' or 'EGEMAPS', then
+                    specifies the step of subwindows.
         """
+        # params assigning
         self.num_chunks=int(np.ceil(sequence_max_length/window_length))
         self.window_length=window_length
         self.batch_size=batch_size
@@ -81,6 +96,8 @@ class AudioFixedChunksGenerator(tf.keras.utils.Sequence):
         self.normalization = normalization
         self.one_hot_labeling=one_hot_labeling
         self.num_classes=num_classes
+        self.subwindow_size=subwindow_size
+        self.subwindow_step=subwindow_step
 
         # check if load mode has an appropriate value
         if load_mode=='path':
@@ -131,7 +148,7 @@ class AudioFixedChunksGenerator(tf.keras.utils.Sequence):
         # check if one_hot_labeling and num_classes are proveded either both or not
         if one_hot_labeling:
             if num_classes==None:
-                raise AttributeError('If ine_hot_labeling=True, the number of classes should be provided. Got %i.'%(num_classes))
+                raise AttributeError('If one_hot_labeling=True, the number of classes should be provided. Got %i.'%(num_classes))
 
         # form indexes for batching then
         self.indexes=self._form_indexes(self.load_mode)
@@ -305,11 +322,12 @@ class AudioFixedChunksGenerator(tf.keras.utils.Sequence):
         if preprocess_type=='LLD':
             preprocessed_audio=extract_opensmile_features_from_audio_sequence(raw_audio, sample_rate, preprocess_type)
         elif preprocess_type=='MFCC':
-            audio_to_preprocess = raw_audio if raw_audio.shape[1]>1 else raw_audio.reshape((-1,))
-            preprocessed_audio=extract_mfcc_from_audio_sequence(audio_to_preprocess.astype('float32'), sample_rate, num_mfcc)
+            preprocessed_audio=extract_mfcc_from_audio_sequence(raw_audio.astype('float32'), sample_rate, num_mfcc)
         elif preprocess_type=='EGEMAPS':
             # TODO: implement EGEMAPS features extraction
-            raise Exception('EGEMAPS are not implemented yet.')
+            preprocessed_audio=extract_subwindow_EGEMAPS_from_audio_sequence(raw_audio, sample_rate,
+                                                                             subwindow_size=self.subwindow_size,
+                                                                             subwindow_step=self.subwindow_step)
         else:
             raise AttributeError('preprocess_type should be either \'LLD\', \'MFCC\' or \'EGEMAPS\'. Got %s.'%(preprocess_type))
         return preprocessed_audio

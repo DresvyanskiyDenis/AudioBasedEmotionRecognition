@@ -95,7 +95,50 @@ def extract_opensmile_features_from_audio_sequence(data:Union[np.ndarray, str], 
         raise AttributeError('Data should be either ndarray or str. Got %s.'%(type(data)))
     return extracted_features
 
+def extract_HLDs_from_LLDs(LLDs:np.ndarray, window_size:float, window_step:float, required_HLDs:Tuple[str,...]) -> List[np.ndarray]:
+    """Extracts High level discriptors (functionals) from low-level discriptors. The output is in format List[np.ndarray] -
+       each np.ndarray is functionals extracted from window calculated with the help of window_size and window_step params
 
+    :param LLDs: np.ndarray
+            low-level discriptors with shape (n_timesteps, n_features)
+    :param window_size: float
+            the size of window for extracting high-level discriptors (functionals)
+            It is fraction, which denotes the percentage of full length of sequence
+            for example, 0.1 means 10% of full length of sequence
+    :param window_step: float
+            the size of shift of window every step. The float number means percentages of
+            full length of sequence as well.
+    :param required_HLDs: Tuple[str,...]
+            The names of functionals needed to be extracted (in str). Currently the supported types are:
+            ('min', 'max', 'mean', 'std')
+    :return: List[np.ndarray]
+            The list of np.ndarrays. Each np.ndarray corresponds to HLDs (functionals) extracted from window.
+    """
+    supported_HLDs=('min', 'max', 'mean', 'std')
+    # check if required_HLDs are all supported by this function
+    if not set(required_HLDs).issubset(supported_HLDs):
+        raise AttributeError('Required HLDs contain some unsupported HLDs. Possible HLDs: %s. Got: %s.'%(supported_HLDs, required_HLDs))
+    # calculate sizes of step and window in units (indexes)
+    window_size_in_units=int(window_size*LLDs.shape[0])
+    window_step_in_units = int(window_step * LLDs.shape[0])
+    # cut LLDs on windows
+    cut_LLDs=cut_data_on_chunks(LLDs, window_size_in_units, window_step_in_units)
+    # extract HLDs for each window
+    result_array=[]
+    for window_idx in range(len(cut_LLDs)):
+        calculated_HLDs=[]
+        for HLD_type in required_HLDs:
+            if HLD_type=='min':
+                calculated_HLDs.append(cut_LLDs[window_idx].min(axis=0))
+            elif HLD_type == 'max':
+                calculated_HLDs.append(cut_LLDs[window_idx].max(axis=0))
+            elif HLD_type == 'mean':
+                calculated_HLDs.append(cut_LLDs[window_idx].mean(axis=0))
+            elif HLD_type == 'std':
+                calculated_HLDs.append(cut_LLDs[window_idx].std(axis=0))
+        calculated_HLDs=np.concatenate(calculated_HLDs, axis=0)[np.newaxis,...]
+        result_array.append(calculated_HLDs)
+    return result_array
 
 def cut_data_on_chunks(data:np.ndarray, chunk_length:int, window_step:int) -> List[np.ndarray]:
     """Cuts data on chunks according to supplied chunk_length and windows_step.
@@ -137,6 +180,9 @@ def cut_data_on_chunks(data:np.ndarray, chunk_length:int, window_step:int) -> Li
 
 
 if __name__=='__main__':
-    path=r'D:\Databases\SEWA\Original\audio\SEW1101.wav'
+    path=r'E:\Databases\SEWA\Original\audio\SEW1101.wav'
     sr, data=load_wav_file(path)
-    cut_data=cut_data_on_chunks(data, chunk_length=16000,window_step=8000)
+    extracted_LLDs=extract_opensmile_features_from_audio_sequence(data, sr, feature_type="LLD")
+    print(extracted_LLDs)
+    extracted_HLDs=extract_HLDs_from_LLDs(extracted_LLDs, 0.01, 0.005, required_HLDs=('min','max','std'))
+

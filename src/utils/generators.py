@@ -240,7 +240,8 @@ class AudioFixedChunksGenerator(tf.keras.utils.Sequence):
             wav_file = self._cut_sequence_on_slices(wav_file, sample_rate)
 
             # preprocess (extracting features)
-            wav_file = self._preprocess_cut_audio(wav_file, sample_rate, self.data_preprocessing_mode, num_mfcc=self.num_mfcc)
+            if not self.data_preprocessing_mode=='raw':
+                wav_file = self._preprocess_cut_audio(wav_file, sample_rate, self.data_preprocessing_mode, num_mfcc=self.num_mfcc)
             # to concatenate wav_files we need to add new axis
             wav_file=wav_file[np.newaxis, ...]
             loaded_data.append(wav_file)
@@ -324,10 +325,10 @@ class AudioFixedChunksGenerator(tf.keras.utils.Sequence):
         elif preprocess_type=='MFCC':
             preprocessed_audio=extract_mfcc_from_audio_sequence(raw_audio.astype('float32'), sample_rate, num_mfcc)
         elif preprocess_type=='EGEMAPS':
-            # TODO: implement EGEMAPS features extraction
             preprocessed_audio=extract_subwindow_EGEMAPS_from_audio_sequence(raw_audio, sample_rate,
                                                                              subwindow_size=self.subwindow_size,
                                                                              subwindow_step=self.subwindow_step)
+        # TODO: add the possibility to extract HLD features
         else:
             raise AttributeError('preprocess_type should be either \'LLD\', \'MFCC\' or \'EGEMAPS\'. Got %s.'%(preprocess_type))
         return preprocessed_audio

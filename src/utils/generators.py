@@ -485,12 +485,17 @@ class ChunksGenerator_preprocessing(tf.keras.utils.Sequence):
     normalization:bool
     subwindow_size:Optional[float]
     subwindow_step:Optional[float]
+    precutting: bool
+    precutting_window_size: Optional[float]
+    precutting_window_step:Optional[float]
 
     def __init__(self, *,sequence_max_length:float, window_length:float, data:Optional[Data_type_format]=None,
                  data_preprocessing_mode:Optional[str]='raw', num_mfcc:Optional[int]=128,
                  labels:Dict[str, np.ndarray]=None, labels_type:str='sequence_to_one', batch_size:int=32,
                  normalization:bool=False, one_hot_labeling:Optional[bool]=None, num_classes:Optional[int]=None,
-                 subwindow_size:Optional[float]=None, subwindow_step:Optional[float]=None):
+                 subwindow_size:Optional[float]=None, subwindow_step:Optional[float]=None,
+                 precutting:bool=False,
+                 precutting_window_size:Optional[float]=None, precutting_window_step:Optional[float]=None):
         """Assigns basic values for data cutting and providing, loads labels, defines how data will be loaded
             and check if all the provided values are in appropriate format
 
@@ -525,6 +530,16 @@ class ChunksGenerator_preprocessing(tf.keras.utils.Sequence):
         :param subwindow_step: Optional[float]
                     if data_preprocessing_mode equals either 'HLD' or 'EGEMAPS', then
                     specifies the step of subwindows.
+        :param precutting: bool
+                    if need, pre-cut sequence on windows, which will be used used then separate as instances of batch
+                    every window will be processed as earlies (cut on fixed number of chunks, transformed to defined
+                    features)
+        :param precutting_window_size: Optional[float]
+                    if precutting=True, defines the size of window, which will be applied to cut original sequence on
+                    slices. Float value in seconds
+        :param precutting_window_step: Optional[float]
+                    if precutting=True, defines the step of window, which will be applied to cut original sequence on
+                    slices. Float value in seconds
         """
         # params assigning
         self.num_chunks=int(np.ceil(sequence_max_length/window_length))
@@ -536,6 +551,9 @@ class ChunksGenerator_preprocessing(tf.keras.utils.Sequence):
         self.num_classes=num_classes
         self.subwindow_size=subwindow_size
         self.subwindow_step=subwindow_step
+        self.precutting=precutting
+        self.precutting_window_size=precutting_window_size
+        self.precutting_window_step=precutting_window_step
 
         # check if data_preprocessing_mode has an appropriate value
         if data_preprocessing_mode in data_preprocessing_types:
@@ -548,6 +566,9 @@ class ChunksGenerator_preprocessing(tf.keras.utils.Sequence):
         # check if data has an appropriate format
         if isinstance(data, dict):
             self.data=data
+            # precut data if need
+            if self.precutting:
+                self.data=self.precut_sequence_on_slices(self.data)
             # cut provided data
             self.data=self._cut_data_in_dict(self.data)
             # preprocess data
@@ -595,6 +616,8 @@ class ChunksGenerator_preprocessing(tf.keras.utils.Sequence):
         data, labels = self._form_batch_with_data_load_mode(index)
         if self.normalization:
             data = self.normalize_batch_of_chunks(data)
+        if self.one_hot_labeling:
+            labels = tf.keras.utils.to_categorical(labels, num_classes=self.num_classes)
         return data, labels
 
     def on_epoch_end(self):
@@ -615,7 +638,7 @@ class ChunksGenerator_preprocessing(tf.keras.utils.Sequence):
                     ndarray with the same shape as batch_of_chunks
         """
         # reshape array to 2D (window_num, num_features)
-        array_to_normalize = batch_of_chunks.reshape((-1, batch_of_chunks.shape[3]))
+        array_to_normalize = batch_of_chunks.reshape((-1, batch_of_chunks.shape[-1]))
         # create scaler
         normalizer = StandardScaler()
         # fit and transform data
@@ -656,6 +679,7 @@ class ChunksGenerator_preprocessing(tf.keras.utils.Sequence):
         # concatenate extracted data and labels
         batch_data=np.concatenate(batch_data, axis=0)
         batch_labels=np.concatenate(batch_labels, axis=0)
+        batch_labels=batch_labels.reshape(batch_labels.shape[:2])
         return batch_data, batch_labels
 
     def _preprocess_raw_audio(self, raw_audio:np.ndarray, sample_rate:int,
@@ -713,13 +737,17 @@ class ChunksGenerator_preprocessing(tf.keras.utils.Sequence):
         :return: np.ndarray
                     extracted from each window features. The output shape is (num_chunks, window_length, num_features)
         """
-        chunks=[]
-        for chunk_idx in range(cut_audio.shape[0]):
-            extracted_features=self._preprocess_raw_audio(cut_audio[chunk_idx], sample_rate,
-                                                          preprocess_type, num_mfcc)
-            chunks.append(extracted_features[np.newaxis,...])
-        chunks=np.concatenate(chunks, axis=0)
-        return chunks
+        batches=[]
+        for batch_idx in range(cut_audio.shape[0]):
+            chunks=[]
+            for chunk_idx in range(cut_audio.shape[1]):
+                extracted_features=self._preprocess_raw_audio(cut_audio[batch_idx,chunk_idx], sample_rate,
+                                                              preprocess_type, num_mfcc)
+                chunks.append(extracted_features[np.newaxis,...])
+            chunks=np.concatenate(chunks, axis=0)[np.newaxis,...]
+            batches.append(chunks)
+        batches=np.concatenate(batches, axis=0)
+        return batches
 
     def _preprocess_all_data(self):
         for key, value in self.data.items():
@@ -797,11 +825,28 @@ class ChunksGenerator_preprocessing(tf.keras.utils.Sequence):
 
     def _cut_data_in_dict(self, data:Data_type_format)->Data_type_format:
         for key, value in data.items():
-            array, sample_rate=value
-            array = self._cut_sequence_on_slices(array, sample_rate)
-            data[key]=(array, sample_rate)
+            batches, sample_rate=value
+            if self.precutting==False:
+                batches=batches[np.newaxis,...]
+            batches_array=[]
+            for batch_idx in range(batches.shape[0]):
+                array = self._cut_sequence_on_slices(batches[batch_idx], sample_rate)
+                batches_array.append(array[np.newaxis,...])
+            batches_array=np.concatenate(batches_array, axis=0)
+            data[key]=(batches_array, sample_rate)
         return data
 
+    def precut_sequence_on_slices(self, data:Data_type_format)->Data_type_format:
+        for key, value in data.items():
+            array, sample_rate = value
+            window_size_in_units=int(round(sample_rate*self.precutting_window_size))
+            window_step_in_units = int(round(sample_rate * self.precutting_window_step))
+            array = cut_data_on_chunks(data=array, chunk_length=window_size_in_units,
+                                       window_step=window_step_in_units)
+            array=[array[i][np.newaxis,...] for i in range(len(array))]
+            array=np.concatenate(array, axis=0)
+            data[key] = (array, sample_rate)
+        return data
 
 
 

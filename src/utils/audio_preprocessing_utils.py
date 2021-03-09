@@ -3,6 +3,7 @@
 """
 
 """
+import math
 from typing import List, Union, Tuple, Optional
 import pandas as pd
 import numpy as np
@@ -96,7 +97,7 @@ def extract_opensmile_features_from_audio_sequence(data:Union[np.ndarray, str], 
         raise AttributeError('Data should be either ndarray or str. Got %s.'%(type(data)))
     return extracted_features
 
-def extract_HLDs_from_LLDs(LLDs:np.ndarray, window_size:float, window_step:float, required_HLDs:Tuple[str,...]) -> List[np.ndarray]:
+def extract_HLDs_from_LLDs(LLDs:np.ndarray, window_size:float, window_step:float, required_HLDs:Tuple[str,...]) -> np.ndarray:
     """Extracts High level discriptors (functionals) from low-level discriptors. The output is in format List[np.ndarray] -
        each np.ndarray is functionals extracted from window calculated with the help of window_size and window_step params
 
@@ -120,8 +121,8 @@ def extract_HLDs_from_LLDs(LLDs:np.ndarray, window_size:float, window_step:float
     if not set(required_HLDs).issubset(supported_HLDs):
         raise AttributeError('Required HLDs contain some unsupported HLDs. Possible HLDs: %s. Got: %s.'%(supported_HLDs, required_HLDs))
     # calculate sizes of step and window in units (indexes)
-    window_size_in_units=int(window_size*LLDs.shape[0])
-    window_step_in_units = int(window_step * LLDs.shape[0])
+    window_size_in_units=int(round(window_size*LLDs.shape[0]))
+    window_step_in_units = int(round(window_step * LLDs.shape[0]))
     # cut LLDs on windows
     cut_LLDs=cut_data_on_chunks(LLDs, window_size_in_units, window_step_in_units)
     # extract HLDs for each window
@@ -139,6 +140,7 @@ def extract_HLDs_from_LLDs(LLDs:np.ndarray, window_size:float, window_step:float
                 calculated_HLDs.append(cut_LLDs[window_idx].std(axis=0))
         calculated_HLDs=np.concatenate(calculated_HLDs, axis=0)[np.newaxis,...]
         result_array.append(calculated_HLDs)
+    result_array=np.concatenate(result_array, axis=0)
     return result_array
 
 def extract_subwindow_EGEMAPS_from_audio_sequence(sequence:np.ndarray, sample_rate:int,

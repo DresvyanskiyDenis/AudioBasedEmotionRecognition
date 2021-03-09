@@ -21,7 +21,7 @@ from sklearn.preprocessing import StandardScaler
 
 from src.utils.audio_preprocessing_utils import cut_data_on_chunks, load_wav_file, \
     extract_opensmile_features_from_audio_sequence, extract_mfcc_from_audio_sequence, \
-    extract_subwindow_EGEMAPS_from_audio_sequence
+    extract_subwindow_EGEMAPS_from_audio_sequence, extract_HLDs_from_LLDs
 
 Data_type_format=Dict[str, Tuple[np.ndarray, int]]
 data_preprocessing_types=('raw', 'LLD', 'HLD','EGEMAPS', 'MFCC')
@@ -328,7 +328,11 @@ class AudioFixedChunksGenerator(tf.keras.utils.Sequence):
             preprocessed_audio=extract_subwindow_EGEMAPS_from_audio_sequence(raw_audio, sample_rate,
                                                                              subwindow_size=self.subwindow_size,
                                                                              subwindow_step=self.subwindow_step)
-        # TODO: add the possibility to extract HLD features
+        elif preprocess_type=='HLD':
+            preprocessed_audio=extract_opensmile_features_from_audio_sequence(raw_audio, sample_rate, 'LLD')
+            preprocessed_audio=extract_HLDs_from_LLDs(preprocessed_audio, window_size=self.subwindow_size,
+                                                      window_step=self.subwindow_step,
+                                                      required_HLDs=('min', 'max', 'mean', 'std'))
         else:
             raise AttributeError('preprocess_type should be either \'LLD\', \'MFCC\' or \'EGEMAPS\'. Got %s.'%(preprocess_type))
         return preprocessed_audio

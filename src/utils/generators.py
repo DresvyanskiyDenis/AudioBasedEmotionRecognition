@@ -99,6 +99,15 @@ class AudioFixedChunksGenerator(tf.keras.utils.Sequence):
         self.subwindow_size=subwindow_size
         self.subwindow_step=subwindow_step
 
+        # check if data_preprocessing_mode has an appropriate value
+        if data_preprocessing_mode in data_preprocessing_types:
+            self.data_preprocessing_mode = data_preprocessing_mode
+        else:
+            raise AttributeError(
+                'data_preprocessing_mode can be either \'raw\', \'LLD\', \'MFCC\', \'EGEMAPS\' or \'HLD\'. Got %s.' % (
+                    data_preprocessing_mode))
+
+
         # check if load mode has an appropriate value
         if load_mode=='path':
             self.load_mode=load_mode
@@ -108,13 +117,6 @@ class AudioFixedChunksGenerator(tf.keras.utils.Sequence):
             else:
                 raise AttributeError('load_path must be a string path to the directory with data and label files. Got %s'%(load_path))
 
-            # check if data_preprocessing_mode has an appropriate value
-            if data_preprocessing_mode in data_preprocessing_types:
-                self.data_preprocessing_mode = data_preprocessing_mode
-            else:
-                raise AttributeError(
-                    'data_preprocessing_mode can be either \'raw\', \'LLD\', \'MFCC\'or \'EGEMAPS\'. Got %s.' % (
-                        data_preprocessing_mode))
 
         elif load_mode=='data':
             self.load_mode = load_mode
@@ -122,11 +124,15 @@ class AudioFixedChunksGenerator(tf.keras.utils.Sequence):
                 self.data=data
                 # cut provided data
                 self.data=self._cut_data_in_dict(self.data)
+                # preprocess data
+                self._preprocess_all_data()
             else:
-                raise AttributeError('With \'data\' load mode the data should be in np.ndarray format. Got %s.'%(type(data)))
+                raise AttributeError('With \'data\' load mode the data should be in dict format. Got %s.'%(type(data)))
 
         else:
             raise AttributeError('load_mode can be either \'path\' or \'data\'. Got %s.'%(load_mode))
+
+
         # check if labels are provided in an appropriate way
         if isinstance(labels, dict):
             if len(labels.keys())==0:
@@ -277,7 +283,7 @@ class AudioFixedChunksGenerator(tf.keras.utils.Sequence):
             # > self.data[filename] provides us (np.ndarray, sample_rate) according to filename
             # > self.data[filename][0] provides us np.ndarray with shape (num_chunks, window_size, num_features)
             # > self.data[filename][0][np.newaxis,...] expand array to add new axis for success concatenation further
-            current_data=self.data[filename][0][np.newaxis,...]
+            current_data=self.data[filename][0][chunk_idx][np.newaxis,...]
             current_labels=self.labels[filename][np.newaxis,...]
             batch_data.append(current_data)
             batch_labels.append(current_labels)
@@ -361,6 +367,14 @@ class AudioFixedChunksGenerator(tf.keras.utils.Sequence):
         chunks=np.concatenate(chunks, axis=0)
         return chunks
 
+    def _preprocess_all_data(self):
+        for key, value in self.data.items():
+            cut_sequence, sample_rate = value
+            cut_sequence = self._preprocess_cut_audio(cut_sequence, sample_rate, self.data_preprocessing_mode, self.num_mfcc)
+            self.data[key]=(cut_sequence, sample_rate)
+
+
+
     def _form_indexes(self, data_mode:str) -> List[Union[int, Tuple[str, int]]]:
         """Forms random indexes depend on data type was loaded.
 
@@ -382,7 +396,7 @@ class AudioFixedChunksGenerator(tf.keras.utils.Sequence):
             # if not (means that load mode is data), we make procedure described above
         else:
             indexes=[]
-            for key, value in self.data:
+            for key, value in self.data.items():
                 # extract values
                 data_array, sample_rate = value
                 filename = key
@@ -409,7 +423,7 @@ class AudioFixedChunksGenerator(tf.keras.utils.Sequence):
             the overall size of data, evaluated across all entries in dict
         """
         sum=0
-        for key, value in self.data:
+        for key, value in self.data.items():
             sum+=value[0].shape[0]
         return sum
 
@@ -453,11 +467,15 @@ class AudioFixedChunksGenerator(tf.keras.utils.Sequence):
         return cut_data
 
     def _cut_data_in_dict(self, data:Data_type_format)->Data_type_format:
-        for key, value in data:
+        for key, value in data.items():
             array, sample_rate=value
             array = self._cut_sequence_on_slices(array, sample_rate)
             data[key]=(array, sample_rate)
         return data
+
+
+
+
 
 
 

@@ -580,9 +580,7 @@ class ChunksGenerator_preprocessing(tf.keras.utils.Sequence):
                 raise AttributeError('If one_hot_labeling=True, the number of classes should be provided. Got %i.'%(num_classes))
 
         # form indexes for batching then
-        self.indexes=self._form_indexes(self.load_mode)
-
-
+        self.indexes=self._form_indexes()
 
     def __len__(self) -> int:
         """Calculates how many batches per one epoch will be.

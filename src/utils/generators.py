@@ -4,6 +4,8 @@
 
 """
 import random
+from multiprocessing.dummy import Process
+from multiprocessing.pool import Pool
 from typing import Optional, Dict, List, Tuple, Union
 
 import numpy as np
@@ -722,7 +724,7 @@ class ChunksGenerator_preprocessing(tf.keras.utils.Sequence):
         return preprocessed_audio
 
     def _preprocess_cut_audio(self, cut_audio:np.ndarray, sample_rate:int,
-                              preprocess_type:str, num_mfcc:Optional[int]=None) -> np.ndarray:
+                              preprocess_type:str, num_mfcc:Optional[int]=None, filename:Optional[str]=None) -> Union[np.ndarray,Tuple[np.ndarray, str]]:
         """ Extract defined in preprocess_type features from cut audio.
 
         :param cut_audio: np.ndarray
@@ -734,8 +736,11 @@ class ChunksGenerator_preprocessing(tf.keras.utils.Sequence):
                     at the start of the script (where imports)
         :param num_mfcc: int
                     if preprocess_type=='MFCC', defines how much mfcc are needed.
-        :return: np.ndarray
-                    extracted from each window features. The output shape is (num_chunks, window_length, num_features)
+        :param filename: str
+                    filename of audio, uses for multiprocessing, to get the result
+        :return: np.ndarray or (np.ndarray, str)
+                    features extracted from each window. The output shape is (num_chunks, window_length, num_features)
+                    for multiprocessing returns the filename as well.
         """
         batches=[]
         for batch_idx in range(cut_audio.shape[0]):
@@ -747,13 +752,33 @@ class ChunksGenerator_preprocessing(tf.keras.utils.Sequence):
             chunks=np.concatenate(chunks, axis=0)[np.newaxis,...]
             batches.append(chunks)
         batches=np.concatenate(batches, axis=0)
+        if filename!=None:
+            return batches, filename
         return batches
 
     def _preprocess_all_data(self):
+        # function uses multiprocessing
+        params_for_pool=[]
+
         for key, value in self.data.items():
             cut_sequence, sample_rate = value
+            filename=key
+            # multiprocessing for preprocessing data
+            params_for_pool.append((cut_sequence, sample_rate, self.data_preprocessing_mode, self.num_mfcc, filename))
+
+
+        with Pool(processes=4) as pool:
+            results=pool.starmap(self._preprocess_cut_audio, params_for_pool)
+
+        for items in results:
+            extracted_features, filename =items
+            cut_sequence, sample_rate = self.data[filename]
+            self.data[filename] = (extracted_features, sample_rate)
+
+        '''for key, value in self.data.items():
+            cut_sequence, sample_rate = value
             cut_sequence = self._preprocess_cut_audio(cut_sequence, sample_rate, self.data_preprocessing_mode, self.num_mfcc)
-            self.data[key]=(cut_sequence, sample_rate)
+            self.data[key]=(cut_sequence, sample_rate)'''
 
 
 

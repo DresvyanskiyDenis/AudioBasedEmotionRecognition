@@ -51,6 +51,9 @@ def extract_mfcc_from_audio_sequence(data:np.ndarray, sample_rate:int, num_mfcc:
                 extracted features with the shape (?, num_mfcc)
                 the first dimension is computed by librosa and depends on length_fft and length_fft_step
     """
+    # check if data is monotonic, but have 2 dimensions
+    if len(data.shape)==2 and data.shape[1]==1:
+        data=data.reshape((-1,))
     mfcc_features=librosa.feature.mfcc(data, sr=sample_rate, n_mfcc=num_mfcc,
                                        n_fft=length_fft, hop_length=length_fft_step)
     return mfcc_features.T

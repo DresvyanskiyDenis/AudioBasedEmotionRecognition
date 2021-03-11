@@ -208,7 +208,7 @@ def chunk_based_rnn_model(*,input_shape:Tuple[int,...],num_output_neurons:int,
         x = tf.keras.layers.TimeDistributed(layer_type(neurons, return_sequences=True, kernel_regularizer=regularization))(x)
         if dropout: x = tf.keras.layers.Dropout(dropout_rate)(x)
     #  average the last hidden states from different chunks with the help of 1x1 Conv2d
-    x = tf.keras.layers.Conv2D(64, 1, activation='tanh')(x)
+    x = tf.keras.layers.Conv2D(128, 1, activation='tanh')(x)
     if dropout: x = tf.keras.layers.Dropout(dropout_rate)(x)
     x = tf.keras.layers.Conv2D(1, 1, activation='tanh')(x)
     # squeeze the last dimension

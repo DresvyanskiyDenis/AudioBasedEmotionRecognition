@@ -45,6 +45,8 @@ def test_different_features(feature_types:Tuple[str,...], sequence_max_length:fl
     label_type = 'sequence_to_one'
     batch_size = 16
     num_mfcc = 128
+    subwindow_size=0.2
+    subwindow_step=0.1
     # variable for logging
     results=[]
 
@@ -61,7 +63,7 @@ def test_different_features(feature_types:Tuple[str,...], sequence_max_length:fl
                                                         batch_size=batch_size,
                                                         normalization=True, one_hot_labeling=True,
                                                         num_classes=num_classes,
-                                                        subwindow_size=0.1, subwindow_step=0.05,
+                                                        subwindow_size=subwindow_size, subwindow_step=subwindow_step,
                                                         precutting=False, precutting_window_size=None,
                                                         precutting_window_step=None)
 
@@ -80,7 +82,7 @@ def test_different_features(feature_types:Tuple[str,...], sequence_max_length:fl
                                                         batch_size=batch_size,
                                                         normalization=True, one_hot_labeling=True,
                                                         num_classes=num_classes,
-                                                        subwindow_size=0.1, subwindow_step=0.05,
+                                                        subwindow_size=subwindow_size, subwindow_step=subwindow_step,
                                                         precutting=False, precutting_window_size=None,
                                                         precutting_window_step=None)
         del val_data
@@ -89,10 +91,10 @@ def test_different_features(feature_types:Tuple[str,...], sequence_max_length:fl
         # build model
         input_shape = (num_chunks,) + train_generator.__get_features_shape__()[-2:]
         model = chunk_based_rnn_model(input_shape=input_shape, num_output_neurons=num_classes,
-                                      neurons_on_layer=(256, 256), rnn_type='LSTM',
+                                      neurons_on_layer=(128, 128), rnn_type='LSTM',
                                       need_regularization=True, dropout=True)
         model.summary()
-        model.compile(optimizer=tf.keras.optimizers.Adam(0.001), loss='categorical_crossentropy',
+        model.compile(optimizer=tf.keras.optimizers.Adam(0.0005), loss='categorical_crossentropy',
                       metrics=[tf.keras.metrics.Recall()])
         # compute class weights
         train_labels = pd.read_csv(path_to_train_labels)
@@ -106,6 +108,11 @@ def test_different_features(feature_types:Tuple[str,...], sequence_max_length:fl
         best_score = max(hist.history['val_recall'])
         results.append((feature_type, best_score))
         print('feature_type:%s, max_val_recall:%f'%(feature_type, best_score))
+        # clear RAM
+        del model
+        del hist
+        gc.collect()
+        tf.keras.backend.clear_session()
     print(results)
     pd.DataFrame(results, columns=['feature_type','val_recall']).to_csv(path_to_save_results, index=False)
 
@@ -123,10 +130,10 @@ if __name__ == '__main__':
     num_classes=3
     data_preprocessing_mode = 'HLD'
     label_type = 'sequence_to_one'
-    batch_size = 16
+    batch_size = 8
     num_mfcc=128
 
-    test_different_features(feature_types=('LLD', 'HLD', 'EGEMAPS','MFCC'),
+    test_different_features(feature_types=('MFCC',),
                             sequence_max_length=sequence_max_length, window_length=window_length)
 
 

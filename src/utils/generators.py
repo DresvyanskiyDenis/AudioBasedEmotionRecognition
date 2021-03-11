@@ -873,6 +873,11 @@ class ChunksGenerator_preprocessing(tf.keras.utils.Sequence):
             data[key] = (array, sample_rate)
         return data
 
+    def __get_features_shape__(self):
+        # get first arbitrary key
+        key=list(self.data.keys())[0]
+        # return shape of data
+        return self.data[key][0].shape
 
 
 

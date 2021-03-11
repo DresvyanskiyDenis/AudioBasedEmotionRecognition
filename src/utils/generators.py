@@ -26,7 +26,7 @@ from src.utils.audio_preprocessing_utils import cut_data_on_chunks, load_wav_fil
     extract_subwindow_EGEMAPS_from_audio_sequence, extract_HLDs_from_LLDs
 
 Data_type_format = Dict[str, Tuple[np.ndarray, int]]
-data_preprocessing_types = ('raw', 'LLD', 'HLD', 'EGEMAPS', 'MFCC')
+data_preprocessing_types = ('raw', 'LLD', 'HLD', 'EGEMAPS', 'MFCC', 'HLD_and_EGEMAPS')
 labels_types = ('sequence_to_one',)
 
 
@@ -707,7 +707,9 @@ class ChunksGenerator_preprocessing(tf.keras.utils.Sequence):
         elif len(raw_audio.shape) != 2:
             raise AttributeError('raw_audio should be 1- or 2-dimensional. Got %i dimensions.' % (len(raw_audio.shape)))
 
-        if preprocess_type == 'LLD':
+        if preprocess_type == 'raw':
+            preprocessed_audio=raw_audio
+        elif preprocess_type == 'LLD':
             preprocessed_audio = extract_opensmile_features_from_audio_sequence(raw_audio, sample_rate, preprocess_type)
         elif preprocess_type == 'MFCC':
             preprocessed_audio = extract_mfcc_from_audio_sequence(raw_audio.astype('float32'), sample_rate, num_mfcc)
@@ -720,6 +722,15 @@ class ChunksGenerator_preprocessing(tf.keras.utils.Sequence):
             preprocessed_audio = extract_HLDs_from_LLDs(preprocessed_audio, window_size=self.subwindow_size,
                                                         window_step=self.subwindow_step,
                                                         required_HLDs=('min', 'max', 'mean', 'std'))
+        elif preprocess_type == 'HLD_and_EGEMAPS':
+            preprocessed_audio_HLD = extract_opensmile_features_from_audio_sequence(raw_audio, sample_rate, 'LLD')
+            preprocessed_audio_HLD = extract_HLDs_from_LLDs(preprocessed_audio_HLD, window_size=self.subwindow_size,
+                                                            window_step=self.subwindow_step,
+                                                            required_HLDs=('min', 'max', 'mean', 'std'))
+            preprocessed_audio_EGEMAPS = extract_subwindow_EGEMAPS_from_audio_sequence(raw_audio, sample_rate,
+                                                                                       subwindow_size=self.subwindow_size,
+                                                                                       subwindow_step=self.subwindow_step)
+            preprocessed_audio=np.concatenate([preprocessed_audio_HLD, preprocessed_audio_EGEMAPS], axis=-1)
         else:
             raise AttributeError(
                 'preprocess_type should be either \'LLD\', \'MFCC\' or \'EGEMAPS\'. Got %s.' % (preprocess_type))

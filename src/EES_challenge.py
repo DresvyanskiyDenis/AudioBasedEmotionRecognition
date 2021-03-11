@@ -9,7 +9,8 @@ from sklearn.utils import class_weight
 import scipy.signal as sps
 from src.utils.audio_preprocessing_utils import load_wav_file
 from src.utils.generators import AudioFixedChunksGenerator, ChunksGenerator_preprocessing
-from src.utils.tf_utils import chunk_based_rnn_model
+from src.utils.tf_utils import chunk_based_rnn_model, chunk_based_rnn_attention_model, \
+    chunk_based_1d_cnn_attention_model
 
 
 def read_labels(path:str) -> Dict[str, np.ndarray]:
@@ -43,7 +44,7 @@ def test_different_features(feature_types:Tuple[str,...], sequence_max_length:fl
     # params
     num_chunks = int(sequence_max_length / window_length)
     label_type = 'sequence_to_one'
-    batch_size = 16
+    batch_size = 4
     num_mfcc = 128
     subwindow_size=0.2
     subwindow_step=0.1
@@ -90,11 +91,20 @@ def test_different_features(feature_types:Tuple[str,...], sequence_max_length:fl
 
         # build model
         input_shape = (num_chunks,) + train_generator.__get_features_shape__()[-2:]
-        model = chunk_based_rnn_model(input_shape=input_shape, num_output_neurons=num_classes,
-                                      neurons_on_layer=(128, 128), rnn_type='LSTM',
-                                      need_regularization=True, dropout=True)
+        """model = chunk_based_rnn_attention_model(input_shape=input_shape, num_output_neurons=num_classes,
+                                      neurons_on_rnn_layer=(128, 128), rnn_type='LSTM',
+                                      need_regularization=True, dropout=True)"""
+        model= chunk_based_1d_cnn_attention_model(input_shape=input_shape,num_output_neurons=num_classes,
+                          filters_per_layer=(32, 64, 128, 128,256,256,512,512),
+                          filter_sizes= (20,20,15,15,12,12,10,6),
+                          pooling_sizes=(4,4,2,2),
+                          pooling_step=2,
+                          need_regularization=True,
+                          dropout=True,
+                          dropout_rate=0.3
+                          )
         model.summary()
-        model.compile(optimizer=tf.keras.optimizers.Adam(0.0005), loss='categorical_crossentropy',
+        model.compile(optimizer=tf.keras.optimizers.Adam(0.001), loss='categorical_crossentropy',
                       metrics=[tf.keras.metrics.Recall()])
         # compute class weights
         train_labels = pd.read_csv(path_to_train_labels)
@@ -103,7 +113,7 @@ def test_different_features(feature_types:Tuple[str,...], sequence_max_length:fl
                                                           train_labels['label'].values)
         class_weights = {i: class_weights[i] for i in range(num_classes)}
         # train
-        hist=model.fit(train_generator, epochs=50, validation_data=devel_generator, class_weight=class_weights)
+        hist=model.fit(train_generator, epochs=200, validation_data=devel_generator, class_weight=class_weights)
         # collect the best reached score
         best_score = max(hist.history['val_recall'])
         results.append((feature_type, best_score))
@@ -133,7 +143,7 @@ if __name__ == '__main__':
     batch_size = 8
     num_mfcc=128
 
-    test_different_features(feature_types=('MFCC',),
+    test_different_features(feature_types=('raw',),
                             sequence_max_length=sequence_max_length, window_length=window_length)
 
 

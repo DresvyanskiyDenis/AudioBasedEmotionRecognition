@@ -13,6 +13,8 @@ __credits__ = ["Denis Dresvyanskiy"]
 __maintainer__ = "Denis Dresvyanskiy"
 __email__ = "denis.dresvyanskiy@uni-ulm.de"
 
+from attention import Attention
+
 
 def create_1d_cnn_model_classification(*,input_shape:Tuple[int,...],num_classes:int,
                                        kernel_sizes:Tuple[int,...]=(15,15,12,12,10,10,5,5,4,3),
@@ -182,10 +184,11 @@ def create_simple_RNN_network(*,input_shape:Tuple[int,...],num_output_neurons:in
 def chunk_based_rnn_model(*,input_shape:Tuple[int,...],num_output_neurons:int,
                           neurons_on_layer: Tuple[int, ...] = (256, 256),
                           rnn_type: str = 'LSTM',
+                          bidirectional:bool=False,
                           need_regularization: bool = False,
                           dropout: bool = False,
                           dropout_rate=0.5
-                          ):
+                          ) -> tf.keras.Model:
     if len(input_shape)!=3:
         raise AttributeError('input shape must be 3-dimensional. Got %i'%(len(input_shape)))
     # define rnn rnn_type
@@ -195,6 +198,7 @@ def chunk_based_rnn_model(*,input_shape:Tuple[int,...],num_output_neurons:int,
         layer_type = tf.keras.layers.LSTM
     elif rnn_type == 'GRU':
         layer_type = tf.keras.layers.GRU
+
     else:
         raise AttributeError('rnn_type should be either \'simple\', \'LSTM\' or \'GRU\'. Got %s' % (rnn_type))
     regularization = tf.keras.regularizers.l2(1e-4) if need_regularization else None
@@ -205,7 +209,11 @@ def chunk_based_rnn_model(*,input_shape:Tuple[int,...],num_output_neurons:int,
     x = input
     for layer_idx in range(len(neurons_on_layer)):
         neurons = neurons_on_layer[layer_idx]
-        x = tf.keras.layers.TimeDistributed(layer_type(neurons, return_sequences=True, kernel_regularizer=regularization))(x)
+        if bidirectional:
+            reccurent_layer=tf.keras.layers.Bidirectional(layer_type(neurons, return_sequences=True, kernel_regularizer=regularization))
+        else:
+            reccurent_layer = layer_type(neurons, return_sequences=True, kernel_regularizer=regularization)
+        x = tf.keras.layers.TimeDistributed(reccurent_layer)(x)
         if dropout: x = tf.keras.layers.Dropout(dropout_rate)(x)
     #  average the last hidden states from different chunks with the help of 1x1 Conv2d
     x = tf.keras.layers.Conv2D(128, 1, activation='tanh')(x)
@@ -213,7 +221,7 @@ def chunk_based_rnn_model(*,input_shape:Tuple[int,...],num_output_neurons:int,
     x = tf.keras.layers.Conv2D(1, 1, activation='tanh')(x)
     # squeeze the last dimension
     x = tf.keras.layers.Reshape((x.shape[1:-1]))(x)
-    # average the second dimension - we will get averaged by timesteps results for every 'features' (last channel)
+    # couple rnn layers on sentence level
     x = layer_type(128, return_sequences=True, kernel_regularizer=regularization)(x)
     if dropout: x = tf.keras.layers.Dropout(dropout_rate)(x)
     x = layer_type(128, kernel_regularizer=regularization)(x)
@@ -225,6 +233,97 @@ def chunk_based_rnn_model(*,input_shape:Tuple[int,...],num_output_neurons:int,
     return model
 
 
+def chunk_based_rnn_attention_model(*,input_shape:Tuple[int,...],num_output_neurons:int,
+                          neurons_on_rnn_layer: Tuple[int, ...] = (256, 256),
+                          rnn_type: str = 'LSTM',
+                          bidirectional:bool=False,
+                          need_regularization: bool = False,
+                          dropout: bool = False,
+                          dropout_rate=0.5
+                          )-> tf.keras.Model:
+    if len(input_shape)!=3:
+        raise AttributeError('input shape must be 3-dimensional. Got %i'%(len(input_shape)))
+    # define rnn rnn_type
+    if rnn_type == 'simple':
+        layer_type = tf.keras.layers.SimpleRNN
+    elif rnn_type == 'LSTM':
+        layer_type = tf.keras.layers.LSTM
+    elif rnn_type == 'GRU':
+        layer_type = tf.keras.layers.GRU
+    else:
+        raise AttributeError('rnn_type should be either \'simple\', \'LSTM\' or \'GRU\'. Got %s' % (rnn_type))
+
+    regularization = tf.keras.regularizers.l2(1e-4) if need_regularization else None
+    # building neural network
+    input = tf.keras.layers.Input(input_shape)
+    # rnn part
+    x = input
+    for layer_idx in range(len(neurons_on_rnn_layer)):
+        neurons = neurons_on_rnn_layer[layer_idx]
+        if bidirectional:
+            reccurent_layer = tf.keras.layers.Bidirectional(
+                layer_type(neurons, return_sequences=True, kernel_regularizer=regularization))
+        else:
+            reccurent_layer = layer_type(neurons, return_sequences=True, kernel_regularizer=regularization)
+        x = tf.keras.layers.TimeDistributed(reccurent_layer)(x)
+        if dropout: x = tf.keras.layers.Dropout(dropout_rate)(x)
+
+    #  average the last hidden states from different chunks with the help of 1x1 Conv2d
+    x = tf.keras.layers.Conv2D(128, 1, activation='tanh')(x)
+    if dropout: x = tf.keras.layers.Dropout(dropout_rate)(x)
+    x = tf.keras.layers.Conv2D(1, 1, activation='tanh')(x)
+    # squeeze the last dimension
+    x = tf.keras.layers.Reshape((x.shape[1:-1]))(x)
+    # average the second dimension - we will get averaged by timesteps results for every 'features' (last channel)
+    #x = layer_type(128, return_sequences=True, kernel_regularizer=regularization)(x)
+    # attention part
+    x = Attention(32)(x)
+    # output
+    x = tf.keras.layers.Dense(64, activation='relu')(x)
+    output = tf.keras.layers.Dense(num_output_neurons, activation='softmax')(x)
+    model=tf.keras.Model(inputs=[input], outputs=[output])
+    return model
+
+def chunk_based_1d_cnn_attention_model(*,input_shape:Tuple[int,...],num_output_neurons:int,
+                          filters_per_layer: Tuple[int, ...] = (64, 128, 256, 512),
+                          filter_sizes:Tuple[int,...] = (10,8, 6, 5),
+                          pooling_sizes:Tuple[int,...]=(2,2),
+                          pooling_step:Optional[int]=2,
+                          need_regularization: bool = False,
+                          dropout: bool = False,
+                          dropout_rate=0.3
+                          )-> tf.keras.Model:
+    # create input layer for model
+    input = tf.keras.layers.Input(input_shape)
+    x = input
+    pooling_idx = 0
+    for layer_idx in range(len(filters_per_layer)):
+        # define parameters for convenience visibility
+        filters = filters_per_layer[layer_idx]
+        kernel_size = filter_sizes[layer_idx]
+        regularization = tf.keras.regularizers.l2(1e-5) if need_regularization else None
+        # create Conv1D layer
+        x = tf.keras.layers.TimeDistributed(tf.keras.layers.Conv1D(filters, kernel_size, padding='same', activation='relu',
+                                   kernel_regularizer=regularization))(x)
+        # add dropout
+        if dropout: x = tf.keras.layers.TimeDistributed(tf.keras.layers.Dropout(dropout_rate))(x)
+        # if now is a step of pooling layer, then create and add to model AveragePooling layer
+        if (layer_idx + 1) % pooling_step == 0:
+            x = tf.keras.layers.TimeDistributed(tf.keras.layers.MaxPool1D(pooling_sizes[pooling_idx]))(x)
+            pooling_idx += 1
+    #  average the last hidden states from different chunks with the help of 1x1 Conv2d
+    x = tf.keras.layers.Conv2D(32, 1, activation='tanh')(x)
+    if dropout: x = tf.keras.layers.Dropout(dropout_rate)(x)
+    x = tf.keras.layers.Conv2D(1, 1, activation='tanh')(x)
+    # squeeze the last dimension
+    x = tf.keras.layers.Reshape((x.shape[1:-1]))(x)
+    # attention
+    x = Attention(11)(x)
+    # output
+    x = tf.keras.layers.Dense(64, activation='relu')(x)
+    output = tf.keras.layers.Dense(num_output_neurons, activation='softmax')(x)
+    model = tf.keras.Model(inputs=[input], outputs=[output])
+    return model
 
 
 
@@ -266,4 +365,6 @@ def CCC_loss_tf(y_true, y_pred):
 
 
 if __name__=="__main__":
-    pass
+    model=chunk_based_1d_cnn_attention_model(input_shape=(12,30,84), num_output_neurons=3,
+                                           need_regularization=True, dropout=True)
+    model.summary()

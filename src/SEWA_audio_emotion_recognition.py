@@ -14,7 +14,7 @@ from src.utils.audio_preprocessing_utils import load_wav_file, \
     cut_data_on_chunks, extract_mfcc_from_audio_sequence, extract_opensmile_features_from_audio_sequence
 from src.utils.data_normalizing_utils import get_trained_minmax_scaler
 from src.utils.label_preprocessing_utils import load_gold_shifted_labels, split_labels_dataframe_according_filenames
-from src.utils.tf_utils import create_1d_cnn_model_classification, create_1d_cnn_model_regression, ccc_loss, \
+from src.utils.sequence_to_one_models import create_1d_cnn_model_classification, create_1d_cnn_model_regression, ccc_loss, \
     CCC_loss_tf, create_simple_RNN_network
 
 __author__ = "Denis Dresvyanskiy"

@@ -5,11 +5,12 @@ from typing import Dict, Tuple
 import tensorflow as tf
 import pandas as pd
 import numpy as np
+from sklearn.metrics import recall_score
 from sklearn.utils import class_weight
 import scipy.signal as sps
 from src.utils.audio_preprocessing_utils import load_wav_file
 from src.utils.generators import AudioFixedChunksGenerator, ChunksGenerator_preprocessing
-from src.utils.tf_utils import chunk_based_rnn_model, chunk_based_rnn_attention_model, \
+from src.utils.sequence_to_one_models import chunk_based_rnn_model, chunk_based_rnn_attention_model, \
     chunk_based_1d_cnn_attention_model
 
 
@@ -36,7 +37,8 @@ def load_all_wav_files(path:str, resample:bool=False, new_sample_rate:int=16000)
     return loaded_wav_files
 
 def test_different_features(feature_types:Tuple[str,...], sequence_max_length:float,
-                            window_length:float, num_classes:int=3, path_to_save_results:str='results') -> None:
+                            window_length:float, num_classes:int=3, path_to_save_results:str='results',
+                            subwindow_size:float=0.2, subwindow_step:float=0.05) -> None:
     path_to_train_data = 'E:\\Databases\\Compare_2021_ESS\\wav\\train\\'
     path_to_train_labels = 'E:\\Databases\\Compare_2021_ESS\\lab\\train.csv'
     path_to_devel_labels = 'E:\\Databases\\Compare_2021_ESS\\lab\\devel.csv'
@@ -44,15 +46,24 @@ def test_different_features(feature_types:Tuple[str,...], sequence_max_length:fl
     # params
     num_chunks = int(sequence_max_length / window_length)
     label_type = 'sequence_to_one'
-    batch_size = 4
+    batch_size = 8
     num_mfcc = 128
-    subwindow_size=0.2
-    subwindow_step=0.1
+    # check if directory where results will be saved exists
+    if not os.path.exists(path_to_save_results):
+        os.mkdir(path_to_save_results)
     # variable for logging
     results=[]
 
     for feature_type in feature_types:
-        # train data
+        # params to save best model
+        path_to_save_model=os.path.join(path_to_save_results,'%s_subwindow_%f_%f'%(feature_type, subwindow_size, subwindow_step))
+        if not os.path.exists(path_to_save_model):
+            os.mkdir(path_to_save_model)
+        save_model_callback=tf.keras.callbacks.ModelCheckpoint(os.path.join(path_to_save_model,'model_weights.h5'),
+                                                               monitor='val_recall', verbose=0, save_best_only=True,
+                                                               save_weights_only=True)
+
+        # load train data
         train_labels = read_labels(path_to_train_labels)
         train_data = load_all_wav_files(path_to_train_data, resample=True)
         train_generator = ChunksGenerator_preprocessing(sequence_max_length=sequence_max_length,
@@ -67,11 +78,11 @@ def test_different_features(feature_types:Tuple[str,...], sequence_max_length:fl
                                                         subwindow_size=subwindow_size, subwindow_step=subwindow_step,
                                                         precutting=False, precutting_window_size=None,
                                                         precutting_window_step=None)
-
+        #clear RAM
         del train_data
         gc.collect()
 
-        # validation data
+        # load validation data
         devel_labels = read_labels(path_to_devel_labels)
         val_data = load_all_wav_files(path_to_devel_data, resample=True)
         devel_generator = ChunksGenerator_preprocessing(sequence_max_length=sequence_max_length,
@@ -86,25 +97,17 @@ def test_different_features(feature_types:Tuple[str,...], sequence_max_length:fl
                                                         subwindow_size=subwindow_size, subwindow_step=subwindow_step,
                                                         precutting=False, precutting_window_size=None,
                                                         precutting_window_step=None)
+        # clear RAM
         del val_data
         gc.collect()
 
         # build model
         input_shape = (num_chunks,) + train_generator.__get_features_shape__()[-2:]
-        """model = chunk_based_rnn_attention_model(input_shape=input_shape, num_output_neurons=num_classes,
-                                      neurons_on_rnn_layer=(128, 128), rnn_type='LSTM',
-                                      need_regularization=True, dropout=True)"""
-        model= chunk_based_1d_cnn_attention_model(input_shape=input_shape,num_output_neurons=num_classes,
-                          filters_per_layer=(32, 64, 128, 128,256,256,512,512),
-                          filter_sizes= (20,20,15,15,12,12,10,6),
-                          pooling_sizes=(4,4,2,2),
-                          pooling_step=2,
-                          need_regularization=True,
-                          dropout=True,
-                          dropout_rate=0.3
-                          )
+        model = chunk_based_rnn_attention_model(input_shape=input_shape, num_output_neurons=num_classes,
+                                      neurons_on_rnn_layer=(128, 256), rnn_type='LSTM', bidirectional=True,
+                                      need_regularization=True, dropout=True)
         model.summary()
-        model.compile(optimizer=tf.keras.optimizers.Adam(0.001), loss='categorical_crossentropy',
+        model.compile(optimizer=tf.keras.optimizers.Adam(0.0005), loss='categorical_crossentropy',
                       metrics=[tf.keras.metrics.Recall()])
         # compute class weights
         train_labels = pd.read_csv(path_to_train_labels)
@@ -112,38 +115,47 @@ def test_different_features(feature_types:Tuple[str,...], sequence_max_length:fl
                                                           np.unique(train_labels['label'].values),
                                                           train_labels['label'].values)
         class_weights = {i: class_weights[i] for i in range(num_classes)}
-        # train
-        hist=model.fit(train_generator, epochs=200, validation_data=devel_generator, class_weight=class_weights)
+        # train model
+        hist=model.fit(train_generator, epochs=1, validation_data=devel_generator, class_weight=class_weights,
+                       callbacks=[save_model_callback])
         # collect the best reached score
         best_score = max(hist.history['val_recall'])
         results.append((feature_type, best_score))
         print('feature_type:%s, max_val_recall:%f'%(feature_type, best_score))
+        # do custom validation instead of tensorflow validation
+        model.load_weights(os.path.join(path_to_save_model,'model_weights.h5'))
+        macro_recall=custom_recall_validation_with_generator(devel_generator, model)
+        results.append((feature_type+'_macro_recall', macro_recall))
+        print('feature_type:%s, max_val_MACRO_recall:%f' % (feature_type, macro_recall))
         # clear RAM
         del model
         del hist
         gc.collect()
         tf.keras.backend.clear_session()
     print(results)
-    pd.DataFrame(results, columns=['feature_type','val_recall']).to_csv(path_to_save_results, index=False)
+    pd.DataFrame(results, columns=['feature_type','val_recall']).to_csv(
+        path_to_save_results+'results_subwindow_%f_%f.csv'%(subwindow_step, subwindow_size), index=False)
 
-
+def custom_recall_validation_with_generator(generator:ChunksGenerator_preprocessing, model:tf.keras.Model)->float:
+    total_predictions=np.zeros((0,))
+    total_ground_truth=np.zeros((0,))
+    for x,y in generator:
+        predictions=model.predict(x)
+        predictions=predictions.argmax(axis=-1).reshape((-1,))
+        total_predictions=np.append(total_predictions,predictions)
+        total_ground_truth=np.append(total_ground_truth,y.argmax(axis=-1).reshape((-1,)))
+    return recall_score(total_ground_truth, total_predictions,average='macro' )
 
 if __name__ == '__main__':
-    path_to_train_data='E:\\Databases\\Compare_2021_ESS\\wav\\train\\'
-    path_to_train_labels='E:\\Databases\\Compare_2021_ESS\\lab\\train.csv'
-    path_to_devel_labels='E:\\Databases\\Compare_2021_ESS\\lab\\devel.csv'
-    path_to_devel_data = 'E:\\Databases\\Compare_2021_ESS\\wav\\dev\\'
     # params
     sequence_max_length = 12
     window_length = 0.5
-    num_chunks = int(sequence_max_length / window_length)
-    num_classes=3
-    data_preprocessing_mode = 'HLD'
-    label_type = 'sequence_to_one'
-    batch_size = 8
-    num_mfcc=128
-
-    test_different_features(feature_types=('raw',),
-                            sequence_max_length=sequence_max_length, window_length=window_length)
+    subwindow_lengths=(0.15, 0.2, 0.23, 0.3)
+    subwindow_steps=(0.05, 0.1, 0.15)
+    for subwindow_length in subwindow_lengths:
+        for subwindow_step in subwindow_steps:
+            test_different_features(feature_types=('LLD','HLD', 'EGEMAPS', 'HLD_EGEMAPS'),
+                                    sequence_max_length=sequence_max_length, window_length=window_length,
+                                    subwindow_size=subwindow_length,subwindow_step=subwindow_step)
 
 

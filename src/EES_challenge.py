@@ -59,9 +59,6 @@ def test_different_features(feature_types:Tuple[str,...], sequence_max_length:fl
         path_to_save_model=os.path.join(path_to_save_results,'%s_subwindow_%f_%f'%(feature_type, subwindow_size, subwindow_step))
         if not os.path.exists(path_to_save_model):
             os.mkdir(path_to_save_model)
-        save_model_callback=tf.keras.callbacks.ModelCheckpoint(os.path.join(path_to_save_model,'model_weights.h5'),
-                                                               monitor='val_recall', verbose=0, save_best_only=True,
-                                                               save_weights_only=True)
 
         # load train data
         train_labels = read_labels(path_to_train_labels)
@@ -124,6 +121,7 @@ def test_different_features(feature_types:Tuple[str,...], sequence_max_length:fl
         print('feature_type:%s, max_val_MACRO_recall:%f' % (feature_type, macro_recall))
         pd.DataFrame(results, columns=['feature_type', 'val_recall']).to_csv(
             os.path.join(path_to_save_results, 'results_subwindow_%f_%f.csv' % (subwindow_size, subwindow_step)), index=False)
+        model.save_weights(os.path.join(path_to_save_results, 'model_weights.h5'))
         # clear RAM
         del model
         del hist

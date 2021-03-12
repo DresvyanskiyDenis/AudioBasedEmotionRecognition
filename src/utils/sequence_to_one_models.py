@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-
+# TODO: write description of the file
 """
 from typing import Tuple, Union, Optional
 import tensorflow as tf
@@ -189,6 +189,7 @@ def chunk_based_rnn_model(*,input_shape:Tuple[int,...],num_output_neurons:int,
                           dropout: bool = False,
                           dropout_rate=0.5
                           ) -> tf.keras.Model:
+    # TODO: write description
     if len(input_shape)!=3:
         raise AttributeError('input shape must be 3-dimensional. Got %i'%(len(input_shape)))
     # define rnn rnn_type
@@ -241,6 +242,7 @@ def chunk_based_rnn_attention_model(*,input_shape:Tuple[int,...],num_output_neur
                           dropout: bool = False,
                           dropout_rate=0.5
                           )-> tf.keras.Model:
+    # TODO: write description
     if len(input_shape)!=3:
         raise AttributeError('input shape must be 3-dimensional. Got %i'%(len(input_shape)))
     # define rnn rnn_type
@@ -293,6 +295,7 @@ def chunk_based_1d_cnn_attention_model(*,input_shape:Tuple[int,...],num_output_n
                           dropout: bool = False,
                           dropout_rate=0.3
                           )-> tf.keras.Model:
+    # TODO: write description
     # create input layer for model
     input = tf.keras.layers.Input(input_shape)
     x = input

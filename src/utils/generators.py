@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-
+# TODO: write description
 """
 import random
 from multiprocessing.dummy import Process
@@ -30,6 +30,7 @@ data_preprocessing_types = ('raw', 'LLD', 'HLD', 'EGEMAPS', 'MFCC', 'HLD_EGEMAPS
 labels_types = ('sequence_to_one',)
 
 class ChunksGenerator_preprocessing(tf.keras.utils.Sequence):
+    # TODO: write description of the class
     num_chunks: int
     window_length: float
     data: Data_type_format
@@ -172,6 +173,7 @@ class ChunksGenerator_preprocessing(tf.keras.utils.Sequence):
         return num_batches
 
     def __getitem__(self, index):
+        # TODO: write description
         data, labels = self._form_batch_with_data_load_mode(index)
         if self.normalization:
             data = self.normalize_batch_of_chunks(data)
@@ -325,6 +327,7 @@ class ChunksGenerator_preprocessing(tf.keras.utils.Sequence):
         return batches
 
     def _preprocess_all_data(self):
+        # TODO: write description
         # function uses multiprocessing
         params_for_pool = []
 
@@ -414,6 +417,7 @@ class ChunksGenerator_preprocessing(tf.keras.utils.Sequence):
         return cut_data
 
     def _cut_data_in_dict(self, data: Data_type_format) -> Data_type_format:
+        # TODO: write description
         for key, value in data.items():
             batches, sample_rate = value
             if self.precutting == False:
@@ -427,6 +431,7 @@ class ChunksGenerator_preprocessing(tf.keras.utils.Sequence):
         return data
 
     def precut_sequence_on_slices(self, data: Data_type_format) -> Data_type_format:
+        # TODO: write description
         for key, value in data.items():
             array, sample_rate = value
             window_size_in_units = int(round(sample_rate * self.precutting_window_size))
@@ -439,6 +444,7 @@ class ChunksGenerator_preprocessing(tf.keras.utils.Sequence):
         return data
 
     def __get_features_shape__(self):
+        # TODO: write description
         # get first arbitrary key
         key = list(self.data.keys())[0]
         # return shape of data

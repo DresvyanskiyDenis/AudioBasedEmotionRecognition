@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-
+# TODO: write description of the file
 """
 import random
 from multiprocessing.dummy import Process
@@ -31,6 +31,7 @@ labels_types = ('sequence_to_one',)
 
 
 class AudioFixedChunksGenerator(tf.keras.utils.Sequence):
+    # TODO: write description of the class
     num_chunks: int
     window_length: float
     load_path: Optional[str]
@@ -146,6 +147,7 @@ class AudioFixedChunksGenerator(tf.keras.utils.Sequence):
         return num_batches
 
     def __getitem__(self, index):
+        # TODO: write description
         loaded_data, labels = self._form_batch_with_path_load_mode(index)
         if self.normalization:
             loaded_data = self.normalize_batch_of_chunks(loaded_data)

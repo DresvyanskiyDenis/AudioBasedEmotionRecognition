@@ -29,10 +29,11 @@ Data_type_format = Dict[str, Tuple[np.ndarray, int]]
 data_preprocessing_types = ('raw', 'LLD', 'HLD', 'EGEMAPS', 'MFCC', 'HLD_EGEMAPS')
 labels_types = ('sequence_to_one',)
 
-class ChunksGenerator_preprocessing(tf.keras.utils.Sequence):
+
+class AudioFixedChunksGenerator(tf.keras.utils.Sequence):
     num_chunks: int
     window_length: float
-    data: Data_type_format
+    load_path: Optional[str]
     data_preprocessing_mode: Optional[str]
     labels: Dict[str, np.ndarray]
     labels_type: str
@@ -40,18 +41,13 @@ class ChunksGenerator_preprocessing(tf.keras.utils.Sequence):
     normalization: bool
     subwindow_size: Optional[float]
     subwindow_step: Optional[float]
-    precutting: bool
-    precutting_window_size: Optional[float]
-    precutting_window_step: Optional[float]
 
-    def __init__(self, *, sequence_max_length: float, window_length: float, data: Optional[Data_type_format] = None,
+    def __init__(self, *, sequence_max_length: float, window_length: float, load_path: Optional[str] = None,
                  data_preprocessing_mode: Optional[str] = 'raw', num_mfcc: Optional[int] = 128,
                  labels: Dict[str, np.ndarray] = None, labels_type: str = 'sequence_to_one', batch_size: int = 32,
                  normalization: bool = False, one_hot_labeling: Optional[bool] = None,
                  num_classes: Optional[int] = None,
-                 subwindow_size: Optional[float] = None, subwindow_step: Optional[float] = None,
-                 precutting: bool = False,
-                 precutting_window_size: Optional[float] = None, precutting_window_step: Optional[float] = None):
+                 subwindow_size: Optional[float] = None, subwindow_step: Optional[float] = None):
         """Assigns basic values for data cutting and providing, loads labels, defines how data will be loaded
             and check if all the provided values are in appropriate format
 
@@ -59,11 +55,10 @@ class ChunksGenerator_preprocessing(tf.keras.utils.Sequence):
                     max length of sequence in seconds. Can be decimal.
         :param window_length: float
                     the length of window for data cutting, in seconds. Can be decimal.
-        :param data: Optional[Data_type_format=Dict[str, Tuple[np.ndarray, int]]]
-                    if load_mode is 'data', then the data in almost the same format as labels must be
-                    provided (besides np.ndarray it contains a sample_rate int number also)
+        :param load_path: Optional[str]
+                    The path to the data files
         :param data_preprocessing_mode: str
-                    can be one of ('raw', 'LLD', 'HLD','EGEMAPS', 'MFCC')
+                    can be one of ('raw', 'LLD', 'HLD','EGEMAPS', 'MFCC', 'HLD_EGEMAPS')
         :param labels: Dict[str, np.ndarray]
                     labels for data. dictionary represents mapping str -> np.ndarray, where
                     str denotes filename and np.ndarray denotes label on each timestep, or 1 label per whole filename,
@@ -86,16 +81,6 @@ class ChunksGenerator_preprocessing(tf.keras.utils.Sequence):
         :param subwindow_step: Optional[float]
                     if data_preprocessing_mode equals either 'HLD' or 'EGEMAPS', then
                     specifies the step of subwindows.
-        :param precutting: bool
-                    if need, pre-cut sequence on windows, which will be used used then separate as instances of batch
-                    every window will be processed as earlies (cut on fixed number of chunks, transformed to defined
-                    features)
-        :param precutting_window_size: Optional[float]
-                    if precutting=True, defines the size of window, which will be applied to cut original sequence on
-                    slices. Float value in seconds
-        :param precutting_window_step: Optional[float]
-                    if precutting=True, defines the step of window, which will be applied to cut original sequence on
-                    slices. Float value in seconds
         """
         # params assigning
         self.num_chunks = int(np.ceil(sequence_max_length / window_length))
@@ -107,30 +92,23 @@ class ChunksGenerator_preprocessing(tf.keras.utils.Sequence):
         self.num_classes = num_classes
         self.subwindow_size = subwindow_size
         self.subwindow_step = subwindow_step
-        self.precutting = precutting
-        self.precutting_window_size = precutting_window_size
-        self.precutting_window_step = precutting_window_step
 
         # check if data_preprocessing_mode has an appropriate value
         if data_preprocessing_mode in data_preprocessing_types:
             self.data_preprocessing_mode = data_preprocessing_mode
         else:
             raise AttributeError(
-                'data_preprocessing_mode can be either \'raw\', \'LLD\', \'MFCC\', \'EGEMAPS\' or \'HLD\'. Got %s.' % (
-                    data_preprocessing_mode))
+                'data_preprocessing_mode can be either \'raw\', \'LLD\', \'MFCC\', \'EGEMAPS\', \'HLD\', '
+                '\'HLD_EGEMAPS\'. Got %s.' % (data_preprocessing_mode))
 
-        # check if data has an appropriate format
-        if isinstance(data, dict):
-            self.data = data
-            # precut data if need
-            if self.precutting:
-                self.data = self.precut_sequence_on_slices(self.data)
-            # cut provided data
-            self.data = self._cut_data_in_dict(self.data)
-            # preprocess data
-            self._preprocess_all_data()
+        # check if load mode has an appropriate value
+        if isinstance(load_path, str):
+            self.load_path = load_path
+            self.data_filenames = self._load_data_filenames(load_path)
         else:
-            raise AttributeError('With \'data\' load mode the data should be in dict format. Got %s.' % (type(data)))
+            raise AttributeError(
+                'load_path must be a string path to the directory with data files. Got %s' % (load_path))
+
 
         # check if labels are provided in an appropriate way
         if isinstance(labels, dict):
@@ -144,6 +122,7 @@ class ChunksGenerator_preprocessing(tf.keras.utils.Sequence):
                 self.labels = labels
         else:
             raise AttributeError('Labels should be a dictionary in str->np.ndarray format.')
+
         # check if labels_type is provided in appropriate way
         if labels_type in labels_types:
             self.labels_type = labels_type
@@ -157,34 +136,29 @@ class ChunksGenerator_preprocessing(tf.keras.utils.Sequence):
                 raise AttributeError(
                     'If one_hot_labeling=True, the number of classes should be provided. Got %i.' % (num_classes))
 
-        # form indexes for batching then
-        self.indexes = self._form_indexes()
-        # shuffle data
-        self.on_epoch_end()
-
     def __len__(self) -> int:
         """Calculates how many batches per one epoch will be.
 
         :return: int
                 how many batches will be per epoch.
         """
-        num_batches = int(np.ceil(self._calculate_overall_size_of_data() / self.batch_size))
+        num_batches = int(np.ceil(len(self.data_filenames) / self.batch_size))
         return num_batches
 
     def __getitem__(self, index):
-        data, labels = self._form_batch_with_data_load_mode(index)
+        loaded_data, labels = self._form_batch_with_path_load_mode(index)
         if self.normalization:
-            data = self.normalize_batch_of_chunks(data)
+            loaded_data = self.normalize_batch_of_chunks(loaded_data)
         if self.one_hot_labeling:
             labels = tf.keras.utils.to_categorical(labels, num_classes=self.num_classes)
-        return data, labels
+        return loaded_data, labels
 
     def on_epoch_end(self):
         """Do some actions at the end of epoch.
            We use random.shuffle function to shuffle list of indexes presented via self.indexes
         :return: None
         """
-        random.shuffle(self.indexes)
+        np.random.shuffle(self.indexes)
 
     def normalize_batch_of_chunks(self, batch_of_chunks: np.ndarray) -> np.ndarray:
         """Normalizes a batch of chunks via StandardScaler() normalizer.
@@ -196,7 +170,7 @@ class ChunksGenerator_preprocessing(tf.keras.utils.Sequence):
                     ndarray with the same shape as batch_of_chunks
         """
         # reshape array to 2D (window_num, num_features)
-        array_to_normalize = batch_of_chunks.reshape((-1, batch_of_chunks.shape[-1]))
+        array_to_normalize = batch_of_chunks.reshape((-1, batch_of_chunks.shape[3]))
         # create scaler
         normalizer = StandardScaler()
         # fit and transform data
@@ -205,11 +179,10 @@ class ChunksGenerator_preprocessing(tf.keras.utils.Sequence):
         result_array = array_to_normalize.reshape(batch_of_chunks.shape)
         return result_array
 
-    def _form_batch_with_data_load_mode(self, index: int) -> Tuple[np.ndarray, np.ndarray]:
+    def _form_batch_with_path_load_mode(self, index: int) -> Tuple[np.ndarray, np.ndarray]:
         """Forms batch, which consists of data and labels chosen according index from shuffled self.indexes.
            The data and labels slice depends on index and defined as index*self.batch_size:(index+1)*self.batch_size
            Thus, index represents the number of slice.
-
         :param index: int
                     the number of slice
         :return: Tuple[np.ndarray, np.ndarray]
@@ -217,27 +190,47 @@ class ChunksGenerator_preprocessing(tf.keras.utils.Sequence):
         """
         # select batch_size indexes from randomly shuffled self.indexes
         start_idx = index * self.batch_size
-        end_idx = (index + 1) * self.batch_size if (index + 1) * self.batch_size <= len(self.indexes) \
-            else len(self.indexes)
-        indexes_to_load = self.indexes[start_idx:end_idx]
-        # form already loaded data and labels in batch
-        batch_data = []
-        batch_labels = []
-        for chosen_idx in indexes_to_load:
-            filename, chunk_idx = chosen_idx
-            # self.data[filename][0][np.newaxis,...] :
-            # > self.data[filename] provides us (np.ndarray, sample_rate) according to filename
-            # > self.data[filename][0] provides us np.ndarray with shape (num_chunks, window_size, num_features)
-            # > self.data[filename][0][np.newaxis,...] expand array to add new axis for success concatenation further
-            current_data = self.data[filename][0][chunk_idx][np.newaxis, ...]
-            current_labels = self.labels[filename][np.newaxis, ...]
-            batch_data.append(current_data)
-            batch_labels.append(current_labels)
-        # concatenate extracted data and labels
-        batch_data = np.concatenate(batch_data, axis=0)
-        batch_labels = np.concatenate(batch_labels, axis=0)
-        batch_labels = batch_labels.reshape(batch_labels.shape[:2])
-        return batch_data, batch_labels
+        end_idx = (index + 1) * self.batch_size if (index + 1) * self.batch_size <= len(self.data_filenames) \
+            else len(self.data_filenames)
+        # load every file and labels for it, preprocess them and concatenate
+        loaded_data = []
+        labels = []
+        for file_index in range(start_idx, end_idx, 1):
+            # load
+            filename_path = os.path.join(self.load_path, self.data_filenames[file_index])
+            wav_file, sample_rate = self._load_wav_audiofile(filename_path)
+            # check if audio has no channels
+            if len(wav_file.shape) == 1:
+                wav_file = wav_file[..., np.newaxis]
+
+            # cut
+            wav_file = self._cut_sequence_on_slices(wav_file, sample_rate)
+
+            # preprocess (extracting features)
+            if not self.data_preprocessing_mode == 'raw':
+                wav_file = self._preprocess_cut_audio(wav_file, sample_rate, self.data_preprocessing_mode,
+                                                      num_mfcc=self.num_mfcc)
+            # to concatenate wav_files we need to add new axis
+            wav_file = wav_file[np.newaxis, ...]
+            loaded_data.append(wav_file)
+            # append labels to labels list for next concatenation
+            corresponding_labels = self.labels[self.data_filenames[file_index]]
+            labels.append(corresponding_labels)
+        # concatenate elements in obtained lists
+        loaded_data = np.concatenate(loaded_data, axis=0)
+        labels = np.concatenate(labels, axis=0)
+        return loaded_data, labels
+
+    def _load_wav_audiofile(self, path) -> Tuple[np.ndarray, int]:
+        """Loads wav file according path
+
+        :param path: str
+                path to wav file
+        :return: Tuple[int, np.ndarray]
+                sample rate of file and values
+        """
+        sample_rate, wav_file = load_wav_file(path)
+        return wav_file, sample_rate
 
     def _preprocess_raw_audio(self, raw_audio: np.ndarray, sample_rate: int,
                               preprocess_type: str, num_mfcc: Optional[int] = None) -> np.ndarray:
@@ -262,7 +255,7 @@ class ChunksGenerator_preprocessing(tf.keras.utils.Sequence):
             raise AttributeError('raw_audio should be 1- or 2-dimensional. Got %i dimensions.' % (len(raw_audio.shape)))
 
         if preprocess_type == 'raw':
-            preprocessed_audio=raw_audio
+            preprocessed_audio = raw_audio
         elif preprocess_type == 'LLD':
             preprocessed_audio = extract_opensmile_features_from_audio_sequence(raw_audio, sample_rate, preprocess_type)
         elif preprocess_type == 'MFCC':
@@ -284,7 +277,7 @@ class ChunksGenerator_preprocessing(tf.keras.utils.Sequence):
             preprocessed_audio_EGEMAPS = extract_subwindow_EGEMAPS_from_audio_sequence(raw_audio, sample_rate,
                                                                                        subwindow_size=self.subwindow_size,
                                                                                        subwindow_step=self.subwindow_step)
-            preprocessed_audio=np.concatenate([preprocessed_audio_HLD, preprocessed_audio_EGEMAPS], axis=-1)
+            preprocessed_audio = np.concatenate([preprocessed_audio_HLD, preprocessed_audio_EGEMAPS], axis=-1)
         else:
             raise AttributeError(
                 'preprocess_type should be either \'LLD\', \'MFCC\' or \'EGEMAPS\'. Got %s.' % (preprocess_type))
@@ -292,7 +285,7 @@ class ChunksGenerator_preprocessing(tf.keras.utils.Sequence):
 
     def _preprocess_cut_audio(self, cut_audio: np.ndarray, sample_rate: int,
                               preprocess_type: str, num_mfcc: Optional[int] = None, filename: Optional[str] = None) -> \
-    Union[np.ndarray, Tuple[np.ndarray, str]]:
+            Union[np.ndarray, Tuple[np.ndarray, str]]:
         """ Extract defined in preprocess_type features from cut audio.
 
         :param cut_audio: np.ndarray
@@ -324,65 +317,16 @@ class ChunksGenerator_preprocessing(tf.keras.utils.Sequence):
             return batches, filename
         return batches
 
-    def _preprocess_all_data(self):
-        # function uses multiprocessing
-        params_for_pool = []
+    def _load_data_filenames(self, path: str) -> List[str]:
+        """Load filenames of data located in directory with path.
 
-        for key, value in self.data.items():
-            cut_sequence, sample_rate = value
-            filename = key
-            # multiprocessing for preprocessing data
-            params_for_pool.append((cut_sequence, sample_rate, self.data_preprocessing_mode, self.num_mfcc, filename))
-
-        with Pool(processes=4) as pool:
-            results = pool.starmap(self._preprocess_cut_audio, params_for_pool)
-
-        for items in results:
-            extracted_features, filename = items
-            cut_sequence, sample_rate = self.data[filename]
-            self.data[filename] = (extracted_features, sample_rate)
-
-        '''for key, value in self.data.items():
-            cut_sequence, sample_rate = value
-            cut_sequence = self._preprocess_cut_audio(cut_sequence, sample_rate, self.data_preprocessing_mode, self.num_mfcc)
-            self.data[key]=(cut_sequence, sample_rate)'''
-
-    def _form_indexes(self) -> List[Union[int, Tuple[str, int]]]:
-        """Forms random indexes depend on data type was loaded.
-
-        :return: indexes
-                list[str] or list[list[str, int]], see the explanation above.
+        :param path: str
+                    path to directory with data files
+        :return: List[str]
+                    list with filenames in path
         """
-        # if data_mode=='path', we simply make permutation of indexes of self.data_filenames
-        indexes = []
-        for key, value in self.data.items():
-            # extract values
-            data_array, sample_rate = value
-            filename = key
-            # make permutation for np.ndarray of particular filename
-            num_indexes = data_array.shape[0]
-            permutations = np.random.permutation(num_indexes)
-            # append indexes randomly permutated
-            for i in range(num_indexes):
-                indexes.append((filename, permutations[i]))
-        return indexes
-
-    def _calculate_overall_size_of_data(self) -> int:
-        """Calculates the overall size of data.
-           It is assumed that self.data is in the format dict(str, np.ndarray), where
-           np.ndarray has shape (Num_batches, num_chunks, window_size, num_features)
-                    num_chunks is evaluated in self.__init__() function
-                    window_size is evaluated in self.__init__() function
-                    num_features is provided by data initially supplied
-            The reason that data has 4 dimensions is that it was cut on slices
-
-        :return: int
-            the overall size of data, evaluated across all entries in dict
-        """
-        sum = 0
-        for key, value in self.data.items():
-            sum += value[0].shape[0]
-        return sum
+        data_filenames = os.listdir(path)
+        return data_filenames
 
     def _cut_sequence_on_slices(self, sequence: np.ndarray, sample_rate: int) -> np.ndarray:
         """cut provided sequence on fixed number of slices. The cutting process carries out on axis=0
@@ -413,37 +357,3 @@ class ChunksGenerator_preprocessing(tf.keras.utils.Sequence):
         cut_data = np.array(cut_data)
         return cut_data
 
-    def _cut_data_in_dict(self, data: Data_type_format) -> Data_type_format:
-        for key, value in data.items():
-            batches, sample_rate = value
-            if self.precutting == False:
-                batches = batches[np.newaxis, ...]
-            batches_array = []
-            for batch_idx in range(batches.shape[0]):
-                array = self._cut_sequence_on_slices(batches[batch_idx], sample_rate)
-                batches_array.append(array[np.newaxis, ...])
-            batches_array = np.concatenate(batches_array, axis=0)
-            data[key] = (batches_array, sample_rate)
-        return data
-
-    def precut_sequence_on_slices(self, data: Data_type_format) -> Data_type_format:
-        for key, value in data.items():
-            array, sample_rate = value
-            window_size_in_units = int(round(sample_rate * self.precutting_window_size))
-            window_step_in_units = int(round(sample_rate * self.precutting_window_step))
-            array = cut_data_on_chunks(data=array, chunk_length=window_size_in_units,
-                                       window_step=window_step_in_units)
-            array = [array[i][np.newaxis, ...] for i in range(len(array))]
-            array = np.concatenate(array, axis=0)
-            data[key] = (array, sample_rate)
-        return data
-
-    def __get_features_shape__(self):
-        # get first arbitrary key
-        key = list(self.data.keys())[0]
-        # return shape of data
-        return self.data[key][0].shape
-
-
-if __name__ == "__main__":
-    pass

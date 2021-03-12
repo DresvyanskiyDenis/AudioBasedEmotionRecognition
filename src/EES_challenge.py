@@ -9,7 +9,7 @@ from sklearn.metrics import recall_score
 from sklearn.utils import class_weight
 import scipy.signal as sps
 from src.utils.audio_preprocessing_utils import load_wav_file
-from src.utils.generators import AudioFixedChunksGenerator, ChunksGenerator_preprocessing
+from src.utils.generators import ChunksGenerator_preprocessing
 from src.utils.sequence_to_one_models import chunk_based_rnn_model, chunk_based_rnn_attention_model, \
     chunk_based_1d_cnn_attention_model
 

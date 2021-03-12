@@ -26,7 +26,7 @@ from src.utils.audio_preprocessing_utils import cut_data_on_chunks, load_wav_fil
     extract_subwindow_EGEMAPS_from_audio_sequence, extract_HLDs_from_LLDs
 
 Data_type_format = Dict[str, Tuple[np.ndarray, int]]
-data_preprocessing_types = ('raw', 'LLD', 'HLD', 'EGEMAPS', 'MFCC', 'HLD_and_EGEMAPS')
+data_preprocessing_types = ('raw', 'LLD', 'HLD', 'EGEMAPS', 'MFCC', 'HLD_EGEMAPS')
 labels_types = ('sequence_to_one',)
 
 

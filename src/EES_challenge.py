@@ -39,14 +39,14 @@ def load_all_wav_files(path:str, resample:bool=False, new_sample_rate:int=16000)
 def test_different_features(feature_types:Tuple[str,...], sequence_max_length:float,
                             window_length:float, num_classes:int=3, path_to_save_results:str='results',
                             subwindow_size:float=0.2, subwindow_step:float=0.05) -> None:
-    path_to_train_data = 'E:\\Databases\\Compare_2021_ESS\\wav\\train\\'
-    path_to_train_labels = 'E:\\Databases\\Compare_2021_ESS\\lab\\train.csv'
-    path_to_devel_labels = 'E:\\Databases\\Compare_2021_ESS\\lab\\devel.csv'
-    path_to_devel_data = 'E:\\Databases\\Compare_2021_ESS\\wav\\dev\\'
+    path_to_train_data = 'C:\\EES_challenge_data\\wav\\train\\'
+    path_to_train_labels = 'C:\\EES_challenge_data\\lab\\train.csv'
+    path_to_devel_labels = 'C:\\EES_challenge_data\\lab\\devel.csv'
+    path_to_devel_data = 'C:\\EES_challenge_data\\wav\\dev\\'
     # params
     num_chunks = int(sequence_max_length / window_length)
     label_type = 'sequence_to_one'
-    batch_size = 8
+    batch_size = 16
     num_mfcc = 128
     # check if directory where results will be saved exists
     if not os.path.exists(path_to_save_results):
@@ -104,7 +104,7 @@ def test_different_features(feature_types:Tuple[str,...], sequence_max_length:fl
         # build model
         input_shape = (num_chunks,) + train_generator.__get_features_shape__()[-2:]
         model = chunk_based_rnn_attention_model(input_shape=input_shape, num_output_neurons=num_classes,
-                                      neurons_on_rnn_layer=(128, 256), rnn_type='LSTM', bidirectional=True,
+                                      neurons_on_rnn_layer=(128, 128), rnn_type='LSTM', bidirectional=True,
                                       need_regularization=True, dropout=True)
         model.summary()
         model.compile(optimizer=tf.keras.optimizers.Adam(0.0005), loss='categorical_crossentropy',
@@ -116,25 +116,22 @@ def test_different_features(feature_types:Tuple[str,...], sequence_max_length:fl
                                                           train_labels['label'].values)
         class_weights = {i: class_weights[i] for i in range(num_classes)}
         # train model
-        hist=model.fit(train_generator, epochs=1, validation_data=devel_generator, class_weight=class_weights,
-                       callbacks=[save_model_callback])
+        hist=model.fit(train_generator, epochs=10, class_weight=class_weights,
+                       callbacks=[validation_callback(devel_generator)])
         # collect the best reached score
-        best_score = max(hist.history['val_recall'])
-        results.append((feature_type, best_score))
-        print('feature_type:%s, max_val_recall:%f'%(feature_type, best_score))
-        # do custom validation instead of tensorflow validation
-        model.load_weights(os.path.join(path_to_save_model,'model_weights.h5'))
         macro_recall=custom_recall_validation_with_generator(devel_generator, model)
         results.append((feature_type+'_macro_recall', macro_recall))
         print('feature_type:%s, max_val_MACRO_recall:%f' % (feature_type, macro_recall))
+        pd.DataFrame(results, columns=['feature_type', 'val_recall']).to_csv(
+            os.path.join(path_to_save_results, 'results_subwindow_%f_%f.csv' % (subwindow_size, subwindow_step)), index=False)
         # clear RAM
         del model
         del hist
+        del train_generator
+        del devel_generator
         gc.collect()
         tf.keras.backend.clear_session()
     print(results)
-    pd.DataFrame(results, columns=['feature_type','val_recall']).to_csv(
-        path_to_save_results+'results_subwindow_%f_%f.csv'%(subwindow_step, subwindow_size), index=False)
 
 def custom_recall_validation_with_generator(generator:ChunksGenerator_preprocessing, model:tf.keras.Model)->float:
     total_predictions=np.zeros((0,))
@@ -145,6 +142,29 @@ def custom_recall_validation_with_generator(generator:ChunksGenerator_preprocess
         total_predictions=np.append(total_predictions,predictions)
         total_ground_truth=np.append(total_ground_truth,y.argmax(axis=-1).reshape((-1,)))
     return recall_score(total_ground_truth, total_predictions,average='macro' )
+
+class validation_callback(tf.keras.callbacks.Callback):
+    def __init__(self, val_generator:ChunksGenerator_preprocessing):
+        super(validation_callback, self).__init__()
+        # best_weights to store the weights at which the minimum UAR occurs.
+        self.best_weights = None
+        # generator to iterate on it on every end of epoch
+        self.val_generator=val_generator
+
+    def on_train_begin(self, logs=None):
+        # Initialize the best as infinity.
+        self.best = 0
+
+    def on_epoch_end(self, epoch, logs=None):
+        current_recall=custom_recall_validation_with_generator(self.val_generator, self.model)
+        print('current_recall:', current_recall)
+        if np.greater(current_recall, self.best):
+            self.best = current_recall
+            self.best_weights = self.model.get_weights()
+
+    def on_train_end(self, logs=None):
+        self.model.set_weights(self.best_weights)
+
 
 if __name__ == '__main__':
     # params

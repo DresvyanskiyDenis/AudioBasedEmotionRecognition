@@ -253,7 +253,7 @@ def chunk_based_rnn_attention_model(*,input_shape:Tuple[int,...],num_output_neur
     else:
         raise AttributeError('rnn_type should be either \'simple\', \'LSTM\' or \'GRU\'. Got %s' % (rnn_type))
 
-    regularization = tf.keras.regularizers.l2(1e-4) if need_regularization else None
+    regularization = tf.keras.regularizers.l2(1e-5) if need_regularization else None
     # building neural network
     input = tf.keras.layers.Input(input_shape)
     # rnn part
@@ -275,9 +275,9 @@ def chunk_based_rnn_attention_model(*,input_shape:Tuple[int,...],num_output_neur
     # squeeze the last dimension
     x = tf.keras.layers.Reshape((x.shape[1:-1]))(x)
     # average the second dimension - we will get averaged by timesteps results for every 'features' (last channel)
-    #x = layer_type(128, return_sequences=True, kernel_regularizer=regularization)(x)
+    x = layer_type(128, return_sequences=True, kernel_regularizer=regularization)(x)
     # attention part
-    x = Attention(32)(x)
+    x = Attention(128)(x)
     # output
     x = tf.keras.layers.Dense(64, activation='relu')(x)
     output = tf.keras.layers.Dense(num_output_neurons, activation='softmax')(x)

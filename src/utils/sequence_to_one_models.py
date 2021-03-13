@@ -18,8 +18,6 @@ List of functions:
     of 2D usually used fot RNN modelling.
     * ccc_loss - Concordance Correlation Coefficient loss taken from AVEC scripts.
     * CCC_loss_tf - Concordance Correlation Coefficient loss taken, my own tensorflow implementation.
-
-# TODO: write description of the file
 """
 from typing import Tuple, Union, Optional
 import tensorflow as tf

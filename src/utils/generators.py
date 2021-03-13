@@ -1,16 +1,12 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-"""
-# TODO: write description
+"""Contains ChunksGenerator_preprocessing class. The description of the class is below.
+
 """
 import random
-from multiprocessing.dummy import Process
 from multiprocessing.pool import Pool
 from typing import Optional, Dict, List, Tuple, Union
-
 import numpy as np
-import pandas as pd
-import os
 import tensorflow as tf
 
 __author__ = "Denis Dresvyanskiy"
@@ -29,21 +25,37 @@ Data_type_format = Dict[str, Tuple[np.ndarray, int]]
 data_preprocessing_types = ('raw', 'LLD', 'HLD', 'EGEMAPS', 'MFCC', 'HLD_EGEMAPS')
 labels_types = ('sequence_to_one',)
 
+
 class ChunksGenerator_preprocessing(tf.keras.utils.Sequence):
-    # TODO: write description of the class
-    num_chunks: int
-    window_length: float
-    data: Data_type_format
-    data_preprocessing_mode: Optional[str]
-    labels: Dict[str, np.ndarray]
-    labels_type: str
-    num_mfcc: Optional[int]
-    normalization: bool
-    subwindow_size: Optional[float]
-    subwindow_step: Optional[float]
-    precutting: bool
-    precutting_window_size: Optional[float]
-    precutting_window_step: Optional[float]
+    """tf.keras.utils.Sequence generator to pass it in model.fit() function.
+    However, it can be used as simple generator as well.
+    The generator takes data and labels in dict[str, np.ndarray] format
+    (str - filename, np.ndarray - corresponding audio sequence or labels)
+    The data will be cut onto fixed number of chunks same length according to article:
+
+    "An Efficient Temporal Modeling Approach for Speech Emotion Recognition byMapping Varied Duration Sentences
+    into Fixed Number of Chunks"
+    https://indico2.conference4me.psnc.pl/event/35/contributions/3415/attachments/531/557/Wed-1-9-1.pdf
+
+    Please, read article for the better understanding what is going on here :)
+
+    """
+    num_chunks: int  # the fixed number of chunks on which audio will be cut (it is calculated inside class).
+    window_length: float  # the length of window (chunk)
+    data: Data_type_format  # data in dict format
+    data_preprocessing_mode: Optional[str]  # the preprocessing mode: do we want to calculate LLDs, HLDs, EGEMAPS, MFCC
+    # combine them or just use raw audio
+    labels: Dict[str, np.ndarray]  # supplied labels in dict format
+    labels_type: str  # defines the type of labels. Can be sequence-to-one and sequence-to-sequence
+    num_mfcc: Optional[int]  # if data_preprocessing mode is MFCC, defines the number of MFCC to be extracted
+    normalization: bool  # should supplied batch be normalized or not
+    subwindow_size: Optional[float]  # if data_preprocessing_mode is HLD, EGEMAPS or HLD_EGEMAPS, defined subwindows,
+    # onto which chunk will be cutted to calculate functionals within subwindow
+    subwindow_step: Optional[float]  # the step of subwindow
+    precutting: bool  # if audio sequence is too long, it can be cut onto several pieces, and every piece will be
+    # considered then as separate instance
+    precutting_window_size: Optional[float]  # the size of these pieces
+    precutting_window_step: Optional[float]  # the step on which window will be shifted in cutting process
 
     def __init__(self, *, sequence_max_length: float, window_length: float, data: Optional[Data_type_format] = None,
                  data_preprocessing_mode: Optional[str] = 'raw', num_mfcc: Optional[int] = 128,
@@ -173,7 +185,13 @@ class ChunksGenerator_preprocessing(tf.keras.utils.Sequence):
         return num_batches
 
     def __getitem__(self, index):
-        # TODO: write description
+        """yield batch of instances.
+
+        :param index: int
+                the index of the batch
+        :return: Tuple[np.ndarray, np.ndarray]
+                the batch of x,y pairs
+        """
         data, labels = self._form_batch_with_data_load_mode(index)
         if self.normalization:
             data = self.normalize_batch_of_chunks(data)
@@ -264,7 +282,7 @@ class ChunksGenerator_preprocessing(tf.keras.utils.Sequence):
             raise AttributeError('raw_audio should be 1- or 2-dimensional. Got %i dimensions.' % (len(raw_audio.shape)))
 
         if preprocess_type == 'raw':
-            preprocessed_audio=raw_audio
+            preprocessed_audio = raw_audio
         elif preprocess_type == 'LLD':
             preprocessed_audio = extract_opensmile_features_from_audio_sequence(raw_audio, sample_rate, preprocess_type)
         elif preprocess_type == 'MFCC':
@@ -279,9 +297,9 @@ class ChunksGenerator_preprocessing(tf.keras.utils.Sequence):
                                                         window_step=self.subwindow_step,
                                                         required_HLDs=('min', 'max', 'mean', 'std'))
         elif preprocess_type == 'HLD_EGEMAPS':
-            preprocessed_audio=extract_combined_features_with_sibwindows(raw_audio, sample_rate,
-                                                                         self.subwindow_size, self.subwindow_step,
-                                                                         feature_types=('HLD', 'EGEMAPS'))
+            preprocessed_audio = extract_combined_features_with_sibwindows(raw_audio, sample_rate,
+                                                                           self.subwindow_size, self.subwindow_step,
+                                                                           feature_types=('HLD', 'EGEMAPS'))
         else:
             raise AttributeError(
                 'preprocess_type should be either \'LLD\', \'MFCC\' or \'EGEMAPS\'. Got %s.' % (preprocess_type))
@@ -289,7 +307,7 @@ class ChunksGenerator_preprocessing(tf.keras.utils.Sequence):
 
     def _preprocess_cut_audio(self, cut_audio: np.ndarray, sample_rate: int,
                               preprocess_type: str, num_mfcc: Optional[int] = None, filename: Optional[str] = None) -> \
-    Union[np.ndarray, Tuple[np.ndarray, str]]:
+            Union[np.ndarray, Tuple[np.ndarray, str]]:
         """ Extract defined in preprocess_type features from cut audio.
 
         :param cut_audio: np.ndarray
@@ -322,7 +340,11 @@ class ChunksGenerator_preprocessing(tf.keras.utils.Sequence):
         return batches
 
     def _preprocess_all_data(self):
-        # TODO: write description
+        """Preprocesses all data located in self.data variable
+            The function uses multiprocessing. This accelarates the preprocessing procedure
+            (how much: depends on the CPU).
+        :return: None
+        """
         # function uses multiprocessing
         params_for_pool = []
 
@@ -412,7 +434,11 @@ class ChunksGenerator_preprocessing(tf.keras.utils.Sequence):
         return cut_data
 
     def _cut_data_in_dict(self, data: Data_type_format) -> Data_type_format:
-        # TODO: write description
+        """Cuts every instance in dict (self.data) onto slices (chunks).
+
+        :param data: Dict[str, Tuple[np.ndarray, int]]
+        :return: Dict[str, Tuple[np.ndarray, int]]
+        """
         for key, value in data.items():
             batches, sample_rate = value
             if self.precutting == False:
@@ -426,7 +452,12 @@ class ChunksGenerator_preprocessing(tf.keras.utils.Sequence):
         return data
 
     def precut_sequence_on_slices(self, data: Data_type_format) -> Data_type_format:
-        # TODO: write description
+        """ Cuts self.data if self.precutting==True. It is needed, if audio sequence is too long
+        and we want to divide it onto several parts.
+
+        :param data: Dict[str, Tuple[np.ndarray, int]]
+        :return: Dict[str, Tuple[np.ndarray, int]]
+        """
         for key, value in data.items():
             array, sample_rate = value
             window_size_in_units = int(round(sample_rate * self.precutting_window_size))
@@ -439,12 +470,17 @@ class ChunksGenerator_preprocessing(tf.keras.utils.Sequence):
         return data
 
     def __get_features_shape__(self):
-        # TODO: write description
+        """Provides the shape of features, e.g
+        (num_chunks, window_size, num_features) will give (window_size, num_features), since it is the features
+        with timesteps. It is the input shape, which will be passed into model.
+
+        :return: Tuple[int,...]
+                The shape of features
+        """
         # get first arbitrary key
         key = list(self.data.keys())[0]
         # return shape of data
         return self.data[key][0].shape
-
 
 
 if __name__ == "__main__":

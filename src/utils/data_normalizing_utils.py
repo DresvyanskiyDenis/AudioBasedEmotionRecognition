@@ -1,7 +1,13 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-"""
-# TODO: write description of the file
+"""Contains different methods to normalize and scale data
+Uses sklearn library.
+
+List of functions:
+    * get_trained_minmax_scaler - provides trained on supplied data MinMaxScaler from sklearn library
+    * transform_data_with_scaler - transforms supplied data with provided scaler
+    * normalize_min_max_data - normalizes/transforms supplied data using MinMax normalization and provides trained
+    scaler, if it is needed.
 """
 from typing import Tuple, Optional
 import numpy as np

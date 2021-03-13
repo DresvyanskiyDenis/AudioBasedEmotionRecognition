@@ -1,11 +1,30 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
+"""Preprocessing utils for audio sequences
+
+Module contains functions for loading, preprocessing and extracting features from audio sequence.
+To extract features, opensmile and librosa libraries are used.
+
+opensmile: https://github.com/audeering/opensmile-python
+librosa:  https://librosa.org
+
+List of functions:
+
+    * load_wav_file - loads .wav file with the help of scipy library
+    * extract_mfcc_from_audio_sequence - extracts defined number of MFCCs from raw audio sequene (it is done by librosa)
+    * extract_opensmile_features_from_audio_sequence - extracts defined opensmile features from audio sequence. The
+    features, which is able for extracting, is defined in supported_feature_types variable of function.
+    * extract_HLDs_from_LLDs - extracts High-level descriptors (HLDs) from provided low-level descriptors (LLDs) via
+    calculating min, max, mean, std functionals within defined size of window.
+    * extract_subwindow_EGEMAPS_from_audio_sequence - extracts EGEMAPS features with the help of opensmile, but before
+    extracting cut sequence on subwindows and extracts EGEMAPS within these subwindows.
+    * extract_combined_features_with_sibwindows - extracts defined features with the help of opensmile, but before
+    extracting cut sequence on subwindows and extracts defined features within these subwindows. Extracted features then
+     combine (concatenate) across feature axis. Currently the supported features are ('EGEMAPS', 'HLD')
+    * cut_data_on_chunks - cut provided sequence on chunks (windows). The data can be either 1-d or 2-d np.ndarray.
 """
-# TODO: write description of the file
-"""
-import math
+
 from typing import List, Union, Tuple, Optional
-import pandas as pd
 import numpy as np
 from scipy.io import wavfile
 import librosa
@@ -16,7 +35,6 @@ __copyright__ = "Copyright 2021"
 __credits__ = ["Denis Dresvyanskiy"]
 __maintainer__ = "Denis Dresvyanskiy"
 __email__ = "denis.dresvyanskiy@uni-ulm.de"
-
 
 
 def load_wav_file(path:str) -> Tuple[int,np.ndarray]:
@@ -166,8 +184,8 @@ def extract_subwindow_EGEMAPS_from_audio_sequence(sequence:np.ndarray, sample_ra
             (timesteps, num_EGEMAPS_features) as well.
     """
     # calculate sizes of step and window in units (indexes)
-    window_size_in_units = int(subwindow_size * sequence.shape[0])
-    window_step_in_units = int(subwindow_step * sequence.shape[0])
+    window_size_in_units = int(np.round(subwindow_size * sequence.shape[0]))
+    window_step_in_units = int(np.round(subwindow_step * sequence.shape[0]))
     # cut LLDs on windows
     cut_sequence = cut_data_on_chunks(sequence, window_size_in_units, window_step_in_units)
     # extract HLDs for each window
@@ -179,6 +197,55 @@ def extract_subwindow_EGEMAPS_from_audio_sequence(sequence:np.ndarray, sample_ra
     result_array=np.concatenate(result_array, axis=0)
     return result_array
 
+def extract_combined_features_with_sibwindows(sequence:np.ndarray, sample_rate:int,
+                                              subwindow_size:float, subwindow_step:float,
+                                              feature_types:Tuple[str,...]) -> np.ndarray:
+    """Extracts defined in feature_types features from audio. Before extracting, the audio sequence will be
+    cut on slices (subwindows) according to subwindow_size and subwindow_step.
+    Currently supported_features=('EGEMAPS','HLD')
+
+    :param sequence: np.ndarray
+                the raw audio sequence
+    :param sample_rate: int
+                the sample rate of raw audio sequence
+    :param subwindow_size: float
+                the size of subwindow denoted as fraction of overall length of audio sequence
+    :param subwindow_step: float
+                the step of subwindow denoted as fraction of overall length of audio sequence
+    :param feature_types: Tuple[str,...]
+                The features, which will be extracted and then concatenated within subwindows
+    :return: np.ndarray
+                Extracted and concatenated within subwindows features
+    """
+    supported_features=('EGEMAPS','HLD')
+    # check if feature_types contains all supported features
+    if not set(feature_types).issubset(supported_features):
+        raise AttributeError('Requested feature_types contain some unsupported features. Supported features: %s. '
+                             'Got: %s.' % (supported_features, feature_types))
+    # calculate sizes of step and window in units (indexes)
+    window_size_in_units = int(np.round(subwindow_size * sequence.shape[0]))
+    window_step_in_units = int(np.round(subwindow_step * sequence.shape[0]))
+    # cut raw data on slices
+    cut_sequence = cut_data_on_chunks(sequence, window_size_in_units, window_step_in_units)
+    result_array = []
+    for subwindow_idx in range(len(cut_sequence)):
+        extracted_features=[]
+        for feature_type in feature_types:
+            if feature_type=='HLD':
+                lld=extract_opensmile_features_from_audio_sequence(cut_sequence[subwindow_idx], sample_rate, 'LLD')
+                hld=extract_HLDs_from_LLDs(lld, window_size=1,
+                                                        window_step=1,
+                                                        required_HLDs=('min', 'max', 'mean', 'std'))
+                extracted_features.append(hld)
+            elif feature_type=='EGEMAPS':
+                egemaps = extract_opensmile_features_from_audio_sequence(cut_sequence[subwindow_idx],
+                                                                                      sample_rate,
+                                                                                      feature_type='EGEMAPS')
+                extracted_features.append(egemaps)
+        extracted_features=np.concatenate(extracted_features, axis=-1)
+        result_array.append(extracted_features)
+    result_array = np.concatenate(result_array, axis=0)
+    return result_array
 
 def cut_data_on_chunks(data:np.ndarray, chunk_length:int, window_step:int) -> List[np.ndarray]:
     """Cuts data on chunks according to supplied chunk_length and windows_step.

@@ -23,7 +23,7 @@ from sklearn.preprocessing import StandardScaler
 
 from src.utils.audio_preprocessing_utils import cut_data_on_chunks, load_wav_file, \
     extract_opensmile_features_from_audio_sequence, extract_mfcc_from_audio_sequence, \
-    extract_subwindow_EGEMAPS_from_audio_sequence, extract_HLDs_from_LLDs
+    extract_subwindow_EGEMAPS_from_audio_sequence, extract_HLDs_from_LLDs, extract_combined_features_with_sibwindows
 
 Data_type_format = Dict[str, Tuple[np.ndarray, int]]
 data_preprocessing_types = ('raw', 'LLD', 'HLD', 'EGEMAPS', 'MFCC', 'HLD_EGEMAPS')
@@ -278,15 +278,10 @@ class ChunksGenerator_preprocessing(tf.keras.utils.Sequence):
             preprocessed_audio = extract_HLDs_from_LLDs(preprocessed_audio, window_size=self.subwindow_size,
                                                         window_step=self.subwindow_step,
                                                         required_HLDs=('min', 'max', 'mean', 'std'))
-        elif preprocess_type == 'HLD_and_EGEMAPS':
-            preprocessed_audio_HLD = extract_opensmile_features_from_audio_sequence(raw_audio, sample_rate, 'LLD')
-            preprocessed_audio_HLD = extract_HLDs_from_LLDs(preprocessed_audio_HLD, window_size=self.subwindow_size,
-                                                            window_step=self.subwindow_step,
-                                                            required_HLDs=('min', 'max', 'mean', 'std'))
-            preprocessed_audio_EGEMAPS = extract_subwindow_EGEMAPS_from_audio_sequence(raw_audio, sample_rate,
-                                                                                       subwindow_size=self.subwindow_size,
-                                                                                       subwindow_step=self.subwindow_step)
-            preprocessed_audio=np.concatenate([preprocessed_audio_HLD, preprocessed_audio_EGEMAPS], axis=-1)
+        elif preprocess_type == 'HLD_EGEMAPS':
+            preprocessed_audio=extract_combined_features_with_sibwindows(raw_audio, sample_rate,
+                                                                         self.subwindow_size, self.subwindow_step,
+                                                                         feature_types=('HLD', 'EGEMAPS'))
         else:
             raise AttributeError(
                 'preprocess_type should be either \'LLD\', \'MFCC\' or \'EGEMAPS\'. Got %s.' % (preprocess_type))
@@ -337,7 +332,7 @@ class ChunksGenerator_preprocessing(tf.keras.utils.Sequence):
             # multiprocessing for preprocessing data
             params_for_pool.append((cut_sequence, sample_rate, self.data_preprocessing_mode, self.num_mfcc, filename))
 
-        with Pool(processes=4) as pool:
+        with Pool(processes=8) as pool:
             results = pool.starmap(self._preprocess_cut_audio, params_for_pool)
 
         for items in results:
@@ -449,6 +444,7 @@ class ChunksGenerator_preprocessing(tf.keras.utils.Sequence):
         key = list(self.data.keys())[0]
         # return shape of data
         return self.data[key][0].shape
+
 
 
 if __name__ == "__main__":

@@ -101,19 +101,19 @@ def test_different_features(feature_types:Tuple[str,...], sequence_max_length:fl
         # build model
         input_shape = (num_chunks,) + train_generator.__get_features_shape__()[-2:]
         model = chunk_based_rnn_attention_model(input_shape=input_shape, num_output_neurons=num_classes,
-                                      neurons_on_rnn_layer=(128, 128), rnn_type='LSTM', bidirectional=True,
+                                      neurons_on_rnn_layer=(128, 128), rnn_type='LSTM', bidirectional=False,
                                       need_regularization=True, dropout=True)
         model.summary()
         model.compile(optimizer=tf.keras.optimizers.Adam(0.0005), loss='categorical_crossentropy',
                       metrics=[tf.keras.metrics.Recall()])
         # compute class weights
-        train_labels = pd.read_csv(path_to_train_labels)
-        class_weights = class_weight.compute_class_weight('balanced',
-                                                          np.unique(train_labels['label'].values),
-                                                          train_labels['label'].values)
-        class_weights = {i: class_weights[i] for i in range(num_classes)}
+        #train_labels = pd.read_csv(path_to_train_labels)
+        #class_weights = class_weight.compute_class_weight('balanced',
+        #                                                  np.unique(train_labels['label'].values),
+        #                                                  train_labels['label'].values)
+        #class_weights = {i: class_weights[i] for i in range(num_classes)}
         # train model
-        hist=model.fit(train_generator, epochs=10, class_weight=class_weights,
+        hist=model.fit(train_generator, epochs=100,
                        callbacks=[validation_callback(devel_generator)])
         # collect the best reached score
         macro_recall=custom_recall_validation_with_generator(devel_generator, model)
@@ -121,7 +121,7 @@ def test_different_features(feature_types:Tuple[str,...], sequence_max_length:fl
         print('feature_type:%s, max_val_MACRO_recall:%f' % (feature_type, macro_recall))
         pd.DataFrame(results, columns=['feature_type', 'val_recall']).to_csv(
             os.path.join(path_to_save_results, 'results_subwindow_%f_%f.csv' % (subwindow_size, subwindow_step)), index=False)
-        model.save_weights(os.path.join(path_to_save_results, 'model_weights.h5'))
+        model.save_weights(os.path.join(path_to_save_model, 'model_weights.h5'))
         # clear RAM
         del model
         del hist
@@ -168,11 +168,11 @@ if __name__ == '__main__':
     # params
     sequence_max_length = 12
     window_length = 0.5
-    subwindow_lengths=(0.15, 0.2, 0.23, 0.3)
+    subwindow_lengths=(0.15, 0.2, 0.25, 0.3)
     subwindow_steps=(0.05, 0.1, 0.15)
     for subwindow_length in subwindow_lengths:
         for subwindow_step in subwindow_steps:
-            test_different_features(feature_types=('LLD','HLD', 'EGEMAPS', 'HLD_EGEMAPS'),
+            test_different_features(feature_types=('LLD', 'HLD', 'EGEMAPS', 'HLD_EGEMAPS',),
                                     sequence_max_length=sequence_max_length, window_length=window_length,
                                     subwindow_size=subwindow_length,subwindow_step=subwindow_step)
 

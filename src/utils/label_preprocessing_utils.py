@@ -14,9 +14,8 @@ List of functions:
       to their filename.
     * main - function for testing implemented functions.
 """
-from typing import List, Dict
+from typing import Dict
 import pandas as pd
-import numpy as np
 
 __author__ = "Denis Dresvyanskiy"
 __copyright__ = "Copyright 2021"

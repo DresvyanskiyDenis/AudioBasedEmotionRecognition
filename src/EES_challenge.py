@@ -100,11 +100,11 @@ def test_different_features(feature_types:Tuple[str,...], sequence_max_length:fl
 
         # build model
         input_shape = (num_chunks,) + train_generator.__get_features_shape__()[-2:]
-        model = chunk_based_rnn_attention_model(input_shape=input_shape, num_output_neurons=num_classes,
-                                      neurons_on_rnn_layer=(128, 128), rnn_type='LSTM', bidirectional=False,
+        model = chunk_based_rnn_model(input_shape=input_shape, num_output_neurons=num_classes,
+                                      neurons_on_layer=(256, 256), rnn_type='LSTM', bidirectional=False,
                                       need_regularization=True, dropout=True)
         model.summary()
-        model.compile(optimizer=tf.keras.optimizers.Adam(0.0005), loss='categorical_crossentropy',
+        model.compile(optimizer=tf.keras.optimizers.Adam(0.0002), loss='categorical_crossentropy',
                       metrics=[tf.keras.metrics.Recall()])
         # compute class weights
         #train_labels = pd.read_csv(path_to_train_labels)
@@ -168,12 +168,10 @@ if __name__ == '__main__':
     # params
     sequence_max_length = 12
     window_length = 0.5
-    subwindow_lengths=(0.15, 0.2, 0.25, 0.3)
-    subwindow_steps=(0.05, 0.1, 0.15)
+    subwindow_lengths=(0.2, 0.3, 0.4)
+    subwindow_steps=(0.1, 0.2)
     for subwindow_length in subwindow_lengths:
         for subwindow_step in subwindow_steps:
-            test_different_features(feature_types=('LLD', 'HLD', 'EGEMAPS', 'HLD_EGEMAPS',),
+            test_different_features(feature_types=('HLD', 'EGEMAPS', 'HLD_EGEMAPS'),
                                     sequence_max_length=sequence_max_length, window_length=window_length,
                                     subwindow_size=subwindow_length,subwindow_step=subwindow_step)
-
-

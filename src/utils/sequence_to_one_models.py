@@ -211,10 +211,11 @@ def chunk_based_rnn_model(*, input_shape: Tuple[int, ...], num_output_neurons: i
     # squeeze the last dimension
     x = tf.keras.layers.Reshape((x.shape[1:-1]))(x)
     # couple rnn layers on sentence level
-    x = layer_type(128, return_sequences=True, kernel_regularizer=regularization)(x)
+    x = layer_type(32, return_sequences=True, kernel_regularizer=regularization)(x)
     if dropout: x = tf.keras.layers.Dropout(dropout_rate)(x)
-    x = layer_type(128, kernel_regularizer=regularization)(x)
+    x = layer_type(32, kernel_regularizer=regularization)(x)
     # x = tf.keras.layers.GlobalAveragePooling1D()(x)
+    x = tf.keras.layers.Dense(64, activation='relu')(x)
     x = tf.keras.layers.Dense(64, activation='relu')(x)
     output = tf.keras.layers.Dense(num_output_neurons, activation='softmax')(x)
 
@@ -271,7 +272,7 @@ def chunk_based_rnn_attention_model(*, input_shape: Tuple[int, ...], num_output_
     input = tf.keras.layers.Input(input_shape)
     # rnn part
     x = input
-    for layer_idx in range(len(neurons_on_rnn_layer)):
+    for layer_idx in range(len(neurons_on_rnn_layer)-1):
         neurons = neurons_on_rnn_layer[layer_idx]
         if bidirectional:
             reccurent_layer = tf.keras.layers.Bidirectional(
@@ -280,15 +281,19 @@ def chunk_based_rnn_attention_model(*, input_shape: Tuple[int, ...], num_output_
             reccurent_layer = layer_type(neurons, return_sequences=True, kernel_regularizer=regularization)
         x = tf.keras.layers.TimeDistributed(reccurent_layer)(x)
         if dropout: x = tf.keras.layers.Dropout(dropout_rate)(x)
-
-    #  average the last hidden states from different chunks with the help of 1x1 Conv2d
-    x = tf.keras.layers.Conv2D(128, 1, activation='relu')(x)
+    # last rnn layer
+    neurons = neurons_on_rnn_layer[-1]
+    if bidirectional:
+        reccurent_layer = tf.keras.layers.Bidirectional(
+            layer_type(neurons, return_sequences=False, kernel_regularizer=regularization))
+    else:
+        reccurent_layer = layer_type(neurons, return_sequences=False, kernel_regularizer=regularization)
+    x = tf.keras.layers.TimeDistributed(reccurent_layer)(x)
     if dropout: x = tf.keras.layers.Dropout(dropout_rate)(x)
-    x = tf.keras.layers.Conv2D(1, 1, activation='relu')(x)
     # squeeze the last dimension
-    x = tf.keras.layers.Reshape((x.shape[1:-1]))(x)
+    #x = tf.keras.layers.Reshape((x.shape[1:-1]))(x)
     # average the second dimension - we will get averaged by timesteps results for every 'features' (last channel)
-    x = layer_type(128, return_sequences=True, kernel_regularizer=regularization)(x)
+    #x = layer_type(128, return_sequences=True, kernel_regularizer=regularization)(x)
     # attention part
     x = Attention(128)(x)
     # output
@@ -406,6 +411,7 @@ def CCC_loss_tf(y_true, y_pred):
 
 
 if __name__ == "__main__":
-    model = chunk_based_1d_cnn_attention_model(input_shape=(12, 30, 84), num_output_neurons=3,
-                                               need_regularization=True, dropout=True)
+    model=chunk_based_rnn_attention_model(input_shape=(12,20,125), num_output_neurons=3,
+                                    neurons_on_rnn_layer=(128, 256), rnn_type='LSTM', bidirectional=False,
+                                    need_regularization=True, dropout=True)
     model.summary()

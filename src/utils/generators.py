@@ -60,8 +60,8 @@ class ChunksGenerator_preprocessing(tf.keras.utils.Sequence):
     def __init__(self, *, sequence_max_length: float, window_length: float, data: Optional[Data_type_format] = None,
                  data_preprocessing_mode: Optional[str] = 'raw', num_mfcc: Optional[int] = 128,
                  labels: Dict[str, np.ndarray] = None, labels_type: str = 'sequence_to_one', batch_size: int = 32,
-                 normalization: bool = False, one_hot_labeling: Optional[bool] = None,
-                 num_classes: Optional[int] = None,
+                 normalization: bool = False, normalizer:Optional[object]=None,
+                 one_hot_labeling: Optional[bool] = None, num_classes: Optional[int] = None,
                  subwindow_size: Optional[float] = None, subwindow_step: Optional[float] = None,
                  precutting: bool = False,
                  precutting_window_size: Optional[float] = None, precutting_window_step: Optional[float] = None):
@@ -85,6 +85,10 @@ class ChunksGenerator_preprocessing(tf.keras.utils.Sequence):
 
         :param normalization: bool
                     Apply normalization to the features before yielding or not.
+        :param normalizer: object
+                    if not None, the provided normalizer will be applied to transform data with the help
+                    of .transform() function. These objects should be sklearn.preprocessing objects.
+                    like: https://scikit-learn.org/stable/modules/generated/sklearn.preprocessing.StandardScaler.html
         :param one_hot_labeling: Optional[bool]
                     Apply one hot labeling to the output labels or not.
         :param num_classes: Optional[int]
@@ -116,6 +120,7 @@ class ChunksGenerator_preprocessing(tf.keras.utils.Sequence):
         self.batch_size = batch_size
         self.num_mfcc = num_mfcc
         self.normalization = normalization
+        self.normalizer=normalizer
         self.one_hot_labeling = one_hot_labeling
         self.num_classes = num_classes
         self.subwindow_size = subwindow_size
@@ -193,11 +198,9 @@ class ChunksGenerator_preprocessing(tf.keras.utils.Sequence):
                 the batch of x,y pairs
         """
         data, labels = self._form_batch_with_data_load_mode(index)
-        if self.normalization:
-            data = self.normalize_batch_of_chunks(data)
         if self.one_hot_labeling:
             labels = tf.keras.utils.to_categorical(labels, num_classes=self.num_classes)
-        return data, labels
+        return data.astype('float32'), labels
 
     def on_epoch_end(self):
         """Do some actions at the end of epoch.
@@ -206,15 +209,16 @@ class ChunksGenerator_preprocessing(tf.keras.utils.Sequence):
         """
         random.shuffle(self.indexes)
 
+    """
     def normalize_batch_of_chunks(self, batch_of_chunks: np.ndarray) -> np.ndarray:
-        """Normalizes a batch of chunks via StandardScaler() normalizer.
+        \"""Normalizes a batch of chunks via StandardScaler() normalizer.
         https://scikit-learn.org/stable/modules/generated/sklearn.preprocessing.StandardScaler.html
 
         :param batch_of_chunks: np.ndarray
                     ndarray with shape (batch_size, num_chunks, window_size, num_features)
         :return: np.ndarray
                     ndarray with the same shape as batch_of_chunks
-        """
+        \"""
         # reshape array to 2D (window_num, num_features)
         array_to_normalize = batch_of_chunks.reshape((-1, batch_of_chunks.shape[-1]))
         # create scaler
@@ -224,6 +228,7 @@ class ChunksGenerator_preprocessing(tf.keras.utils.Sequence):
         # reshape obtained data back to initial shape
         result_array = array_to_normalize.reshape(batch_of_chunks.shape)
         return result_array
+        """
 
     def _form_batch_with_data_load_mode(self, index: int) -> Tuple[np.ndarray, np.ndarray]:
         """Forms batch, which consists of data and labels chosen according index from shuffled self.indexes.
@@ -362,10 +367,33 @@ class ChunksGenerator_preprocessing(tf.keras.utils.Sequence):
             cut_sequence, sample_rate = self.data[filename]
             self.data[filename] = (extracted_features, sample_rate)
 
-        '''for key, value in self.data.items():
-            cut_sequence, sample_rate = value
-            cut_sequence = self._preprocess_cut_audio(cut_sequence, sample_rate, self.data_preprocessing_mode, self.num_mfcc)
-            self.data[key]=(cut_sequence, sample_rate)'''
+        if self.normalization:
+            if self.normalizer is None:
+                self.data, self.normalizer= self._normalize_all_data(self.data, return_normalizer=True)
+            else:
+                self.data = self._normalize_all_data(self.data, normalizer=self.normalizer)
+
+    def _normalize_all_data(self, data:Data_type_format, return_normalizer:bool=False,
+                        normalizer:Optional[object]=None) -> Union[Data_type_format, Tuple[Data_type_format, object]]:
+        if normalizer is None:
+            normalizer=StandardScaler()
+            concatenated_data = []
+            for key, item in data.items():
+                array, sample_rate = item
+                concatenated_data.append(array)
+            concatenated_data = np.concatenate(concatenated_data, axis=0)
+            normalizer=normalizer.fit(concatenated_data.reshape((-1, concatenated_data.shape[-1])))
+            del concatenated_data
+        for key, item in data.items():
+            array, sample_rate = item
+            old_shape=array.shape
+            array=array.reshape((-1, array.shape[-1]))
+            array=normalizer.transform(array)
+            array=array.reshape(old_shape)
+            data[key]=(array, sample_rate)
+        if return_normalizer:
+            return data, normalizer
+        return data
 
     def _form_indexes(self) -> List[Union[int, Tuple[str, int]]]:
         """Forms random indexes depend on data type was loaded.
@@ -469,6 +497,14 @@ class ChunksGenerator_preprocessing(tf.keras.utils.Sequence):
             data[key] = (array, sample_rate)
         return data
 
+    def get_dict_predictions(self, model:tf.keras.Model):
+        predictions={}
+        for key, item in self.data.items():
+            array, sample_rate = item
+            prediction=model.predict(array)
+            predictions[key]=prediction
+        return predictions
+
     def __get_features_shape__(self):
         """Provides the shape of features, e.g
         (num_chunks, window_size, num_features) will give (window_size, num_features), since it is the features
@@ -481,6 +517,8 @@ class ChunksGenerator_preprocessing(tf.keras.utils.Sequence):
         key = list(self.data.keys())[0]
         # return shape of data
         return self.data[key][0].shape
+
+
 
 
 if __name__ == "__main__":

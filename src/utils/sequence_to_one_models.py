@@ -355,18 +355,19 @@ def chunk_based_1d_cnn_attention_model(*, input_shape: Tuple[int, ...], num_outp
         if dropout: x = tf.keras.layers.TimeDistributed(tf.keras.layers.Dropout(dropout_rate))(x)
         # if now is a step of pooling layer, then create and add to model AveragePooling layer
         if (layer_idx + 1) % pooling_step == 0:
-            x = tf.keras.layers.TimeDistributed(tf.keras.layers.MaxPool1D(pooling_sizes[pooling_idx]))(x)
+            x = tf.keras.layers.TimeDistributed(tf.keras.layers.AveragePooling1D(pooling_sizes[pooling_idx]))(x)
             pooling_idx += 1
-    #  average the last hidden states from different chunks with the help of 1x1 Conv2d
-    x = tf.keras.layers.Conv2D(32, 1, activation='tanh')(x)
-    if dropout: x = tf.keras.layers.Dropout(dropout_rate)(x)
-    x = tf.keras.layers.Conv2D(1, 1, activation='tanh')(x)
-    # squeeze the last dimension
-    x = tf.keras.layers.Reshape((x.shape[1:-1]))(x)
+    #  average pooling to squeeze tensor to 2-d
+    x = tf.keras.layers.TimeDistributed(tf.keras.layers.GlobalAveragePooling1D())(x)
     # attention
-    x = Attention(11)(x)
+    x = Attention(128)(x)
+    #x = tf.keras.layers.LSTM(128, return_sequences=True)(x)
+    #if dropout: x=tf.keras.layers.Dropout(dropout_rate)(x)
+    #x = tf.keras.layers.LSTM(128, return_sequences=False)(x)
+    #if dropout: x = tf.keras.layers.Dropout(dropout_rate)(x)
     # output
-    x = tf.keras.layers.Dense(64, activation='relu')(x)
+    x = tf.keras.layers.Dense(128, activation='relu')(x)
+    x = tf.keras.layers.Dense(128, activation='relu')(x)
     output = tf.keras.layers.Dense(num_output_neurons, activation='softmax')(x)
     model = tf.keras.Model(inputs=[input], outputs=[output])
     return model
@@ -411,7 +412,13 @@ def CCC_loss_tf(y_true, y_pred):
 
 
 if __name__ == "__main__":
-    model=chunk_based_rnn_attention_model(input_shape=(12,20,125), num_output_neurons=3,
-                                    neurons_on_rnn_layer=(128, 256), rnn_type='LSTM', bidirectional=False,
-                                    need_regularization=True, dropout=True)
+    model=chunk_based_1d_cnn_attention_model(input_shape=(24,8000,1), num_output_neurons=3,
+                                       filters_per_layer = (64, 128, 128, 256,256),
+                                       filter_sizes = (12, 10, 8, 6, 5),
+                                       pooling_sizes = (8, 4,2,2,2),
+                                       pooling_step = 1,
+                                       need_regularization= True,
+                                       dropout= True,
+                                       dropout_rate=0.3
+                                       )
     model.summary()

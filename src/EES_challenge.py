@@ -46,7 +46,7 @@ def test_different_features(feature_types:Tuple[str,...], sequence_max_length:fl
     # params
     num_chunks = int(sequence_max_length / window_length)
     label_type = 'sequence_to_one'
-    batch_size = 16
+    batch_size = 4
     num_mfcc = 128
     # check if directory where results will be saved exists
     if not os.path.exists(path_to_save_results):
@@ -89,7 +89,8 @@ def test_different_features(feature_types:Tuple[str,...], sequence_max_length:fl
                                                         num_mfcc=num_mfcc,
                                                         labels=devel_labels, labels_type=label_type,
                                                         batch_size=batch_size,
-                                                        normalization=True, one_hot_labeling=True,
+                                                        normalization=True, normalizer=train_generator.normalizer,
+                                                        one_hot_labeling=True,
                                                         num_classes=num_classes,
                                                         subwindow_size=subwindow_size, subwindow_step=subwindow_step,
                                                         precutting=False, precutting_window_size=None,
@@ -103,8 +104,18 @@ def test_different_features(feature_types:Tuple[str,...], sequence_max_length:fl
         model = chunk_based_rnn_model(input_shape=input_shape, num_output_neurons=num_classes,
                                       neurons_on_layer=(256, 256), rnn_type='LSTM', bidirectional=False,
                                       need_regularization=True, dropout=True)
+        """model=chunk_based_1d_cnn_attention_model(input_shape=input_shape, num_output_neurons=num_classes,
+                                       filters_per_layer = (128, 128, 128, 256,256),
+                                       filter_sizes = (20, 15, 10, 6, 5),
+                                       pooling_sizes = (8, 4,2,2,2),
+                                       pooling_step = 1,
+                                       need_regularization= True,
+                                       dropout= True,
+                                       dropout_rate=0.3
+                                       )"""
         model.summary()
-        model.compile(optimizer=tf.keras.optimizers.Adam(0.0002), loss='categorical_crossentropy',
+        #model.load_weights('C:\\Users\\Denis\\PycharmProjects\\AudioBasedEmotionRecognition\\src\\results\\MFCC_subwindow_3.000000_0.100000\\model_weights.h5', by_name=True)
+        model.compile(optimizer=tf.keras.optimizers.RMSprop(0.0005, decay=1e-6), loss='categorical_crossentropy',
                       metrics=[tf.keras.metrics.Recall()])
         # compute class weights
         #train_labels = pd.read_csv(path_to_train_labels)
@@ -113,18 +124,27 @@ def test_different_features(feature_types:Tuple[str,...], sequence_max_length:fl
         #                                                  train_labels['label'].values)
         #class_weights = {i: class_weights[i] for i in range(num_classes)}
         # train model
-        hist=model.fit(train_generator, epochs=100,
+        hist=model.fit(train_generator, epochs=50,
                        callbacks=[validation_callback(devel_generator)])
         # collect the best reached score
         macro_recall=custom_recall_validation_with_generator(devel_generator, model)
         results.append((feature_type+'_macro_recall', macro_recall))
         print('feature_type:%s, max_val_MACRO_recall:%f' % (feature_type, macro_recall))
+        # save predictions
+        predictions=devel_generator.get_dict_predictions(model)
+        df_for_saving_predictions=pd.DataFrame(data=np.zeros((len(predictions), num_classes + 1)))
+        df_for_saving_predictions.iloc[:,0]=np.array(list(predictions.keys()))
+        df_for_saving_predictions.iloc[:,1:]=np.array(list(predictions.values())).reshape((len(predictions), num_classes))
+        df_for_saving_predictions.columns=['filename']+['class_prob_%i'%i for i in range(num_classes)]
+        df_for_saving_predictions.to_csv(path_to_save_model+'predictions.csv', index=False)
+        # save final results and weights
         pd.DataFrame(results, columns=['feature_type', 'val_recall']).to_csv(
             os.path.join(path_to_save_results, 'results_subwindow_%f_%f.csv' % (subwindow_size, subwindow_step)), index=False)
         model.save_weights(os.path.join(path_to_save_model, 'model_weights.h5'))
+
         # clear RAM
         del model
-        del hist
+        #del hist
         del train_generator
         del devel_generator
         gc.collect()
@@ -139,7 +159,7 @@ def custom_recall_validation_with_generator(generator:ChunksGenerator_preprocess
         predictions=predictions.argmax(axis=-1).reshape((-1,))
         total_predictions=np.append(total_predictions,predictions)
         total_ground_truth=np.append(total_ground_truth,y.argmax(axis=-1).reshape((-1,)))
-    return recall_score(total_ground_truth, total_predictions,average='macro' )
+    return recall_score(total_ground_truth, total_predictions,average='macro')
 
 class validation_callback(tf.keras.callbacks.Callback):
     def __init__(self, val_generator:ChunksGenerator_preprocessing):
@@ -168,10 +188,10 @@ if __name__ == '__main__':
     # params
     sequence_max_length = 12
     window_length = 0.5
-    subwindow_lengths=(0.2, 0.3, 0.4)
-    subwindow_steps=(0.1, 0.2)
+    subwindow_lengths=(0.2,0.3)
+    subwindow_steps=(0.1,0.2)
     for subwindow_length in subwindow_lengths:
         for subwindow_step in subwindow_steps:
-            test_different_features(feature_types=('HLD', 'EGEMAPS', 'HLD_EGEMAPS'),
+            test_different_features(feature_types=('MFCC',),
                                     sequence_max_length=sequence_max_length, window_length=window_length,
                                     subwindow_size=subwindow_length,subwindow_step=subwindow_step)

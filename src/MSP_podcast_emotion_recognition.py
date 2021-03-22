@@ -15,6 +15,8 @@ __credits__ = ["Denis Dresvyanskiy"]
 __maintainer__ = "Denis Dresvyanskiy"
 __email__ = "denis.dresvyanskiy@uni-ulm.de"
 
+from src.utils.audio_preprocessing_utils import load_wav_file
+
 """
 Angry		(A)
 Sad		    (S)
@@ -80,6 +82,22 @@ def delete_instances_with_class(labels:Dict[str, int], class_to_delete:int=-1)->
 if __name__=='__main__':
     path_to_labels='D:\\Downloads\\MSP_podcast\\Labels.txt'
     path_to_data='D:\\Downloads\\Audios\\Audios'
+    one_hot_labeling=True
+    num_classes=7
+    normalization=False
+    data_preprocessing_mode='raw'
+    num_mfcc=128
+    sequence_max_length=14
+    window_length=1
     labels=load_and_preprocess_labels_MSP_podcast(path_to_labels)
     labels=delete_instances_with_class(labels, class_to_delete=-1)
+    a=1+2
+    max=0
+    lengths=np.zeros((len(labels),))
+    i=0
+    for filename in labels:
+        sr, data=load_wav_file(os.path.join(path_to_data, filename))
+        length=data.shape[0]/sr
+        lengths[i]=length
+        i+=1
     a=1+2

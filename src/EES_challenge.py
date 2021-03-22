@@ -118,14 +118,14 @@ def test_different_features(feature_types:Tuple[str,...], sequence_max_length:fl
         model.compile(optimizer=tf.keras.optimizers.RMSprop(0.0005, decay=1e-6), loss='categorical_crossentropy',
                       metrics=[tf.keras.metrics.Recall()])
         # compute class weights
-        #train_labels = pd.read_csv(path_to_train_labels)
-        #class_weights = class_weight.compute_class_weight('balanced',
-        #                                                  np.unique(train_labels['label'].values),
-        #                                                  train_labels['label'].values)
-        #class_weights = {i: class_weights[i] for i in range(num_classes)}
+        train_labels = pd.read_csv(path_to_train_labels)
+        class_weights = class_weight.compute_class_weight('balanced',
+                                                          np.unique(train_labels['label'].values),
+                                                          train_labels['label'].values)
+        class_weights = {i: class_weights[i] for i in range(num_classes)}
         # train model
         hist=model.fit(train_generator, epochs=50,
-                       callbacks=[validation_callback(devel_generator)])
+                       callbacks=[validation_callback(devel_generator)], class_weight=class_weights)
         # collect the best reached score
         macro_recall=custom_recall_validation_with_generator(devel_generator, model)
         results.append((feature_type+'_macro_recall', macro_recall))

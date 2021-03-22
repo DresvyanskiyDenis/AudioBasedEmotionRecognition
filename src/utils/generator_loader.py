@@ -30,7 +30,7 @@ data_preprocessing_types = ('raw', 'LLD', 'HLD', 'EGEMAPS', 'MFCC', 'HLD_EGEMAPS
 labels_types = ('sequence_to_one',)
 
 
-class AudioFixedChunksGenerator(tf.keras.utils.Sequence):
+class FixedChunksGenerator_loader(tf.keras.utils.Sequence):
     # TODO: write description of the class
     num_chunks: int
     window_length: float

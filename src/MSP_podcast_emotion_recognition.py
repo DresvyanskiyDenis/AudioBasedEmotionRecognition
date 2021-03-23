@@ -3,11 +3,14 @@
 """
 TODO: add file description and functions list
 """
+import contextlib
+import wave
 from typing import List, Dict, Tuple
 import pandas as pd
 import numpy as np
 import os
 import scipy.signal as sps
+import tensorflow as tf
 
 __author__ = "Denis Dresvyanskiy"
 __copyright__ = "Copyright 2021"
@@ -16,6 +19,8 @@ __maintainer__ = "Denis Dresvyanskiy"
 __email__ = "denis.dresvyanskiy@uni-ulm.de"
 
 from src.utils.audio_preprocessing_utils import load_wav_file
+from src.utils.generator_loader import FixedChunksGenerator_loader
+from src.utils.sequence_to_one_models import chunk_based_1d_cnn_attention_model
 
 """
 Angry		(A)
@@ -37,7 +42,7 @@ emotion_to_int_mappping={
     'F': 4,
     'D': 5,
     'C': -1,
-    'N': 7,
+    'N': 6,
     'O': -1,
     'X': -1
 }
@@ -67,7 +72,7 @@ def load_and_preprocess_labels_MSP_podcast(path:str)->Dict[str, np.ndarray]:
                 labels[filename]=np.array(emotion_to_int_mappping[class_category]).reshape((-1,))
     return labels
 
-def delete_instances_with_class(labels:Dict[str, int], class_to_delete:int=-1)-> Dict[str, int]:
+def delete_instances_with_class(labels:Dict[str, np.ndarray], class_to_delete:int=-1)-> Dict[str, np.ndarray]:
     # TODO: add description
         keys_to_delete=[]
         for key, item in labels.items():
@@ -77,11 +82,69 @@ def delete_instances_with_class(labels:Dict[str, int], class_to_delete:int=-1)->
             labels.pop(key)
         return labels
 
+def get_train_dev_separation_in_dict(path:str)-> Dict[str, List[str]]:
+    #TODO: write description
+    labels_partition_dict={}
+    partition_df=pd.read_csv(path, sep=';', header=None)
+    labels_partition_dict['train']=partition_df[partition_df.iloc[:,0]=='Train'].iloc[:,1].to_list()
+    labels_partition_dict['dev'] = partition_df[partition_df.iloc[:,0]=='Validation'].iloc[:,1].to_list()
+    return labels_partition_dict
+
+def get_labels_according_to_filenames(labels:Dict[str, np.ndarray],
+                                                  filenames:List[str])-> Dict[str, np.ndarray]:
+    # TODO: write description
+    extracted_labels=dict((filename.strip(), labels[filename.strip()]) for filename in filenames)
+    return extracted_labels
+
+
+def main():
+    path_to_labels = 'D:\\Databases\\MSP_podcast\\labels\\Labels.txt'
+    path_to_data = 'D:\\Databases\\MSP_podcast\\Audios'
+    path_to_labels_partition='D:\\Databases\\MSP_podcast\\Partitions.txt'
+    one_hot_labeling = True
+    num_classes = 7
+    normalization = False
+    data_preprocessing_mode = 'raw'
+    num_mfcc = 128
+    sequence_max_length = 14
+    window_length = 1
+    # load and preprocess labels
+    labels = load_and_preprocess_labels_MSP_podcast(path_to_labels)
+    # get labels partition (on train and dev) and split labels on train and dev
+    labels_partition=get_train_dev_separation_in_dict(path_to_labels_partition)
+    train_labels= get_labels_according_to_filenames(labels, labels_partition['train'])
+    dev_labels=get_labels_according_to_filenames(labels, labels_partition['dev'])
+
+    # delete instance with inappropriate class (-1)
+    train_labels = delete_instances_with_class(train_labels, class_to_delete=-1)
+    dev_labels = delete_instances_with_class(dev_labels, class_to_delete=-1)
+    # create generator-loader
+    train_generator=FixedChunksGenerator_loader(sequence_max_length=sequence_max_length, window_length=window_length, load_path= path_to_data,
+                 data_preprocessing_mode= data_preprocessing_mode, num_mfcc = num_mfcc,
+                 labels = train_labels, labels_type= 'sequence_to_one', batch_size= 8,
+                 normalization= normalization, one_hot_labeling = one_hot_labeling,
+                 num_classes = num_classes)
+
+    input_shape=(14, 16000,1)
+
+    model = chunk_based_1d_cnn_attention_model(input_shape=input_shape, num_output_neurons=num_classes,
+                                               filters_per_layer=(128, 128, 128, 256, 256),
+                                               filter_sizes=(20, 15, 10, 6, 5),
+                                               pooling_sizes=(8, 4, 2, 2, 2),
+                                               pooling_step=1,
+                                               need_regularization=True,
+                                               dropout=True,
+                                               dropout_rate=0.3
+                                               )
+    model.compile(optimizer=tf.keras.optimizers.RMSprop(0.0005, decay=1e-6), loss='categorical_crossentropy',
+                  metrics=[tf.keras.metrics.Recall()])
+    hist = model.fit(train_generator, epochs=50, use_multiprocessing=True)
 
 
 if __name__=='__main__':
-    path_to_labels='D:\\Downloads\\MSP_podcast\\Labels.txt'
-    path_to_data='D:\\Downloads\\Audios\\Audios'
+    main()
+    path_to_labels='D:\\Databases\\MSP_podcast\\labels\\Labels.txt'
+    path_to_data='D:\\Databases\\MSP_podcast\\Audios'
     one_hot_labeling=True
     num_classes=7
     normalization=False
@@ -96,8 +159,12 @@ if __name__=='__main__':
     lengths=np.zeros((len(labels),))
     i=0
     for filename in labels:
-        sr, data=load_wav_file(os.path.join(path_to_data, filename))
-        length=data.shape[0]/sr
-        lengths[i]=length
+        with contextlib.closing(wave.open(os.path.join(path_to_data, filename), 'r')) as f:
+            frames = f.getnframes()
+            rate = f.getframerate()
+            duration = frames / float(rate)
+        lengths[i]=duration
         i+=1
+        print(i)
     a=1+2
+    print(a+5)

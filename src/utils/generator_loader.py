@@ -105,7 +105,7 @@ class FixedChunksGenerator_loader(tf.keras.utils.Sequence):
         # check if load mode has an appropriate value
         if isinstance(load_path, str):
             self.load_path = load_path
-            self.data_filenames = self._load_data_filenames(load_path)
+            self.data_filenames = list(labels.keys())
         else:
             raise AttributeError(
                 'load_path must be a string path to the directory with data files. Got %s' % (load_path))
@@ -318,17 +318,6 @@ class FixedChunksGenerator_loader(tf.keras.utils.Sequence):
         if filename != None:
             return batches, filename
         return batches
-
-    def _load_data_filenames(self, path: str) -> List[str]:
-        """Load filenames of data located in directory with path.
-
-        :param path: str
-                    path to directory with data files
-        :return: List[str]
-                    list with filenames in path
-        """
-        data_filenames = os.listdir(path)
-        return data_filenames
 
     def _cut_sequence_on_slices(self, sequence: np.ndarray, sample_rate: int) -> np.ndarray:
         """cut provided sequence on fixed number of slices. The cutting process carries out on axis=0

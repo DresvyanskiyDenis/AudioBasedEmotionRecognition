@@ -18,6 +18,8 @@ __credits__ = ["Denis Dresvyanskiy"]
 __maintainer__ = "Denis Dresvyanskiy"
 __email__ = "denis.dresvyanskiy@uni-ulm.de"
 
+from sklearn.metrics import recall_score
+
 from src.utils.audio_preprocessing_utils import load_wav_file
 from src.utils.generator_loader import FixedChunksGenerator_loader
 from src.utils.sequence_to_one_models import chunk_based_1d_cnn_attention_model
@@ -96,11 +98,45 @@ def get_labels_according_to_filenames(labels:Dict[str, np.ndarray],
     extracted_labels=dict((filename.strip(), labels[filename.strip()]) for filename in filenames)
     return extracted_labels
 
+def custom_recall_validation_with_generator(generator:FixedChunksGenerator_loader, model:tf.keras.Model)->float:
+    total_predictions=np.zeros((0,))
+    total_ground_truth=np.zeros((0,))
+    for x,y in generator:
+        predictions=model.predict(x)
+        predictions=predictions.argmax(axis=-1).reshape((-1,))
+        total_predictions=np.append(total_predictions,predictions)
+        total_ground_truth=np.append(total_ground_truth,y.argmax(axis=-1).reshape((-1,)))
+    return recall_score(total_ground_truth, total_predictions,average='macro')
+
+class validation_callback(tf.keras.callbacks.Callback):
+    def __init__(self, val_generator:FixedChunksGenerator_loader):
+        super(validation_callback, self).__init__()
+        # best_weights to store the weights at which the minimum UAR occurs.
+        self.best_weights = None
+        # generator to iterate on it on every end of epoch
+        self.val_generator=val_generator
+
+    def on_train_begin(self, logs=None):
+        # Initialize the best as infinity.
+        self.best = 0
+
+    def on_epoch_end(self, epoch, logs=None):
+        current_recall=custom_recall_validation_with_generator(self.val_generator, self.model)
+        print('current_recall:', current_recall)
+        if np.greater(current_recall, self.best):
+            self.best = current_recall
+            self.best_weights = self.model.get_weights()
+
+    def on_train_end(self, logs=None):
+        self.model.set_weights(self.best_weights)
+
+
 
 def main():
-    path_to_labels = 'D:\\Databases\\MSP_podcast\\labels\\Labels.txt'
-    path_to_data = 'D:\\Databases\\MSP_podcast\\Audios'
-    path_to_labels_partition='D:\\Databases\\MSP_podcast\\Partitions.txt'
+    path_to_labels = 'E:\\Databases\\MSP_podcast\\labels\\Labels.txt'
+    path_to_data = 'E:\\Databases\\MSP_podcast\\Audios'
+    path_to_labels_partition='E:\\Databases\\MSP_podcast\\Partitions.txt'
+    path_to_save_model_weights='best_model'
     one_hot_labeling = True
     num_classes = 7
     normalization = False
@@ -108,6 +144,7 @@ def main():
     num_mfcc = 128
     sequence_max_length = 14
     window_length = 1
+    batch_size=5
     # load and preprocess labels
     labels = load_and_preprocess_labels_MSP_podcast(path_to_labels)
     # get labels partition (on train and dev) and split labels on train and dev
@@ -119,52 +156,44 @@ def main():
     train_labels = delete_instances_with_class(train_labels, class_to_delete=-1)
     dev_labels = delete_instances_with_class(dev_labels, class_to_delete=-1)
     # create generator-loader
-    train_generator=FixedChunksGenerator_loader(sequence_max_length=sequence_max_length, window_length=window_length, load_path= path_to_data,
+    train_generator=FixedChunksGenerator_loader(sequence_max_length=sequence_max_length, window_length=window_length,
+                                                load_path= path_to_data, resample=16000,
                  data_preprocessing_mode= data_preprocessing_mode, num_mfcc = num_mfcc,
-                 labels = train_labels, labels_type= 'sequence_to_one', batch_size= 8,
+                 labels = train_labels, labels_type= 'sequence_to_one', batch_size=batch_size ,
                  normalization= normalization, one_hot_labeling = one_hot_labeling,
                  num_classes = num_classes)
+    # define dev generato and callback to evaluate model performance at the end of epoch
+    dev_generator=FixedChunksGenerator_loader(sequence_max_length=sequence_max_length, window_length=window_length,
+                                              load_path= path_to_data,resample=16000,
+                 data_preprocessing_mode= data_preprocessing_mode, num_mfcc = num_mfcc,
+                 labels = dev_labels, labels_type= 'sequence_to_one', batch_size=batch_size ,
+                 normalization= normalization, one_hot_labeling = one_hot_labeling,
+                 num_classes = num_classes)
+    dev_callback=validation_callback(dev_generator)
 
-    input_shape=(14, 16000,1)
-
+    # create and compile model
+    input_shape = (14, 16000, 1)
     model = chunk_based_1d_cnn_attention_model(input_shape=input_shape, num_output_neurons=num_classes,
-                                               filters_per_layer=(128, 128, 128, 256, 256),
-                                               filter_sizes=(20, 15, 10, 6, 5),
-                                               pooling_sizes=(8, 4, 2, 2, 2),
+                                               filters_per_layer=(128, 128, 256,256, 256,256),
+                                               filter_sizes=(20, 15, 12, 8, 6, 5),
+                                               pooling_sizes=(8, 4, 4, 2,2,2),
                                                pooling_step=1,
                                                need_regularization=True,
                                                dropout=True,
-                                               dropout_rate=0.3
-                                               )
-    model.compile(optimizer=tf.keras.optimizers.RMSprop(0.0005, decay=1e-6), loss='categorical_crossentropy',
+                                               dropout_rate=0.3)
+    model.compile(optimizer=tf.keras.optimizers.RMSprop(0.001, decay=1e-6), loss='categorical_crossentropy',
                   metrics=[tf.keras.metrics.Recall()])
-    hist = model.fit(train_generator, epochs=50, use_multiprocessing=True)
+    model.summary()
+    # fit model
+    hist = model.fit(train_generator, epochs=1, use_multiprocessing=True, callbacks=[dev_callback])
+    # save model. The model will be saved with best weights evaluated on devel set (since the dev_callback will set
+    # weights of model at the end of training process)
+    if not os.path.exists(path_to_save_model_weights):
+        os.mkdir(path_to_save_model_weights)
+    model.save_weights(os.path.join(path_to_save_model_weights,'best_model_weights.h5'))
+
+
 
 
 if __name__=='__main__':
     main()
-    path_to_labels='D:\\Databases\\MSP_podcast\\labels\\Labels.txt'
-    path_to_data='D:\\Databases\\MSP_podcast\\Audios'
-    one_hot_labeling=True
-    num_classes=7
-    normalization=False
-    data_preprocessing_mode='raw'
-    num_mfcc=128
-    sequence_max_length=14
-    window_length=1
-    labels=load_and_preprocess_labels_MSP_podcast(path_to_labels)
-    labels=delete_instances_with_class(labels, class_to_delete=-1)
-    a=1+2
-    max=0
-    lengths=np.zeros((len(labels),))
-    i=0
-    for filename in labels:
-        with contextlib.closing(wave.open(os.path.join(path_to_data, filename), 'r')) as f:
-            frames = f.getnframes()
-            rate = f.getframerate()
-            duration = frames / float(rate)
-        lengths[i]=duration
-        i+=1
-        print(i)
-    a=1+2
-    print(a+5)

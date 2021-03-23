@@ -10,6 +10,7 @@ from typing import Optional, Dict, List, Tuple, Union
 
 import numpy as np
 import pandas as pd
+import scipy.signal as sps
 import os
 import tensorflow as tf
 
@@ -44,6 +45,7 @@ class FixedChunksGenerator_loader(tf.keras.utils.Sequence):
     subwindow_step: Optional[float]
 
     def __init__(self, *, sequence_max_length: float, window_length: float, load_path: Optional[str] = None,
+                 resample:Optional[int]=None,
                  data_preprocessing_mode: Optional[str] = 'raw', num_mfcc: Optional[int] = 128,
                  labels: Dict[str, np.ndarray] = None, labels_type: str = 'sequence_to_one', batch_size: int = 32,
                  normalization: bool = False, one_hot_labeling: Optional[bool] = None,
@@ -87,6 +89,7 @@ class FixedChunksGenerator_loader(tf.keras.utils.Sequence):
         self.num_chunks = int(np.ceil(sequence_max_length / window_length))
         self.window_length = window_length
         self.batch_size = batch_size
+        self.resample_rate=resample
         self.num_mfcc = num_mfcc
         self.normalization = normalization
         self.one_hot_labeling = one_hot_labeling
@@ -153,13 +156,16 @@ class FixedChunksGenerator_loader(tf.keras.utils.Sequence):
             loaded_data = self.normalize_batch_of_chunks(loaded_data)
         if self.one_hot_labeling:
             labels = tf.keras.utils.to_categorical(labels, num_classes=self.num_classes)
-        return loaded_data, labels
+        return loaded_data.astype('float32'), labels.astype('float32')
 
     def on_epoch_end(self):
         """Do some actions at the end of epoch.
            We use random.shuffle function to shuffle list of indexes presented via self.indexes
         :return: None
         """
+        # TODO: here is a problem
+        # AttributeError: 'FixedChunksGenerator_loader' object has no attribute 'indexes'
+        # mb random.shuffle(self.data_filenames)?
         np.random.shuffle(self.indexes)
 
     def normalize_batch_of_chunks(self, batch_of_chunks: np.ndarray) -> np.ndarray:
@@ -200,7 +206,7 @@ class FixedChunksGenerator_loader(tf.keras.utils.Sequence):
         for file_index in range(start_idx, end_idx, 1):
             # load
             filename_path = os.path.join(self.load_path, self.data_filenames[file_index])
-            wav_file, sample_rate = self._load_wav_audiofile(filename_path)
+            wav_file, sample_rate = self._load_wav_audiofile(filename_path, self.resample_rate)
             # check if audio has no channels
             if len(wav_file.shape) == 1:
                 wav_file = wav_file[..., np.newaxis]
@@ -223,7 +229,7 @@ class FixedChunksGenerator_loader(tf.keras.utils.Sequence):
         labels = np.concatenate(labels, axis=0)
         return loaded_data, labels
 
-    def _load_wav_audiofile(self, path) -> Tuple[np.ndarray, int]:
+    def _load_wav_audiofile(self, path, resample:Optional[int]=None) -> Tuple[np.ndarray, int]:
         """Loads wav file according path
 
         :param path: str
@@ -232,6 +238,12 @@ class FixedChunksGenerator_loader(tf.keras.utils.Sequence):
                 sample rate of file and values
         """
         sample_rate, wav_file = load_wav_file(path)
+        if not self.resample_rate is None and resample!=sample_rate:
+            number_of_samples = round(len(wav_file) * resample / sample_rate)
+            wav_file = sps.resample(wav_file, number_of_samples)
+            sample_rate = resample
+        if len(wav_file.shape)==2 and wav_file.shape[1]>1:
+            wav_file = wav_file.sum(axis=1)/wav_file.shape[1]
         return wav_file, sample_rate
 
     def _preprocess_raw_audio(self, raw_audio: np.ndarray, sample_rate: int,

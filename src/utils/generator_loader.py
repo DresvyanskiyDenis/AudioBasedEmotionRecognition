@@ -166,7 +166,7 @@ class FixedChunksGenerator_loader(tf.keras.utils.Sequence):
         # TODO: here is a problem
         # AttributeError: 'FixedChunksGenerator_loader' object has no attribute 'indexes'
         # mb random.shuffle(self.data_filenames)?
-        np.random.shuffle(self.indexes)
+        random.shuffle(self.data_filenames)
 
     def normalize_batch_of_chunks(self, batch_of_chunks: np.ndarray) -> np.ndarray:
         """Normalizes a batch of chunks via StandardScaler() normalizer.

@@ -4,6 +4,7 @@
 TODO: add file description and functions list
 """
 import contextlib
+import shutil
 import wave
 from typing import List, Dict, Tuple
 import pandas as pd
@@ -130,6 +131,43 @@ class validation_callback(tf.keras.callbacks.Callback):
     def on_train_end(self, logs=None):
         self.model.set_weights(self.best_weights)
 
+def separate_train_dev_test_audion_on_different_dirs(path_to_data:str, path_to_partitions:str, destination_path:str) -> None:
+    # read partitions from file
+    partitions=pd.read_csv(path_to_partitions, sep=';', header=None)
+    # create destination directory
+    if not os.path.exists(destination_path):
+        os.makedirs(destination_path, exist_ok=True)
+    # create train, val, test directories
+    if not os.path.exists(os.path.join(destination_path, 'train')):
+        os.makedirs(os.path.join(destination_path, 'train'), exist_ok=True)
+    if not os.path.exists(os.path.join(destination_path, 'dev')):
+        os.makedirs(os.path.join(destination_path, 'dev'), exist_ok=True)
+    if not os.path.exists(os.path.join(destination_path, 'test')):
+        os.makedirs(os.path.join(destination_path, 'test'), exist_ok=True)
+    # separate train, dev, test
+    train_filenames=partitions[partitions[0]=='Train'].iloc[:,1].values
+    val_filenames=partitions[partitions[0]=='Validation'].iloc[:,1].values
+    test_filenames=partitions[(partitions[0]=='Test1') | (partitions[0]=='Test2')].iloc[:,1].values
+    # moving train files
+    for filename in train_filenames:
+        strip_filename=filename.strip()
+        old_path=os.path.join(path_to_data, strip_filename)
+        new_path=os.path.join(destination_path, 'train',strip_filename)
+        shutil.move(old_path, new_path)
+    # moving val files
+    for filename in val_filenames:
+        strip_filename=filename.strip()
+        old_path=os.path.join(path_to_data, strip_filename)
+        new_path=os.path.join(destination_path, 'dev',strip_filename)
+        shutil.move(old_path, new_path)
+    # moving test files
+    for filename in test_filenames:
+        strip_filename=filename.strip()
+        old_path=os.path.join(path_to_data, strip_filename)
+        new_path=os.path.join(destination_path, 'test',strip_filename)
+        shutil.move(old_path, new_path)
+
+
 
 
 def main():
@@ -181,7 +219,7 @@ def main():
                                                need_regularization=True,
                                                dropout=True,
                                                dropout_rate=0.3)
-    model.compile(optimizer=tf.keras.optimizers.RMSprop(0.001, decay=1e-6), loss='categorical_crossentropy',
+    model.compile(optimizer=tf.keras.optimizers.Adam(0.0005), loss='categorical_crossentropy',
                   metrics=[tf.keras.metrics.Recall()])
     model.summary()
     # fit model
@@ -196,4 +234,7 @@ def main():
 
 
 if __name__=='__main__':
-    main()
+    #main()
+    separate_train_dev_test_audion_on_different_dirs(path_to_data='E:\\Databases\\MSP_podcast\\Audios',
+                                                     path_to_partitions='E:\\Databases\\MSP_podcast\\Partitions.txt',
+                                                     destination_path='E:\\Databases\\MSP_podcast\\Sep_audios')

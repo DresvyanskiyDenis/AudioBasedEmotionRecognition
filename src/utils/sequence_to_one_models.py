@@ -203,19 +203,19 @@ def chunk_based_rnn_model(*, input_shape: Tuple[int, ...], num_output_neurons: i
         else:
             reccurent_layer = layer_type(neurons, return_sequences=True, kernel_regularizer=regularization)
         x = tf.keras.layers.TimeDistributed(reccurent_layer)(x)
-        if dropout: x = tf.keras.layers.Dropout(dropout_rate)(x)
+        if dropout: x = tf.keras.layers.TimeDistributed(tf.keras.layers.Dropout(dropout_rate))(x)
     #  average the last hidden states from different chunks with the help of 1x1 Conv2d
-    x = tf.keras.layers.Conv2D(128, 1, activation='tanh')(x)
+    x = tf.keras.layers.Conv2D(128, 1, activation='tanh', kernel_regularizer=regularization)(x)
     if dropout: x = tf.keras.layers.Dropout(dropout_rate)(x)
     x = tf.keras.layers.Conv2D(1, 1, activation='tanh')(x)
     # squeeze the last dimension
     x = tf.keras.layers.Reshape((x.shape[1:-1]))(x)
     # couple rnn layers on sentence level
-    x = layer_type(32, return_sequences=True, kernel_regularizer=regularization)(x)
+    x = layer_type(128, return_sequences=True, kernel_regularizer=regularization)(x)
     if dropout: x = tf.keras.layers.Dropout(dropout_rate)(x)
-    x = layer_type(32, kernel_regularizer=regularization)(x)
+    x = layer_type(128, kernel_regularizer=regularization)(x)
     # x = tf.keras.layers.GlobalAveragePooling1D()(x)
-    x = tf.keras.layers.Dense(64, activation='relu')(x)
+    x = tf.keras.layers.Dense(128, activation='relu')(x)
     x = tf.keras.layers.Dense(64, activation='relu')(x)
     output = tf.keras.layers.Dense(num_output_neurons, activation='softmax')(x)
 

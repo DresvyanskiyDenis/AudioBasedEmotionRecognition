@@ -23,7 +23,8 @@ from sklearn.metrics import recall_score
 
 from src.utils.audio_preprocessing_utils import load_wav_file
 from src.utils.generator_loader import FixedChunksGenerator_loader
-from src.utils.sequence_to_one_models import chunk_based_1d_cnn_attention_model
+from src.utils.sequence_to_one_models import chunk_based_1d_cnn_attention_model, chunk_based_rnn_attention_model, \
+    chunk_based_rnn_model
 
 """
 Angry		(A)
@@ -171,18 +172,19 @@ def separate_train_dev_test_audion_on_different_dirs(path_to_data:str, path_to_p
 
 
 def main():
-    path_to_labels = 'E:\\Databases\\MSP_podcast\\labels\\Labels.txt'
-    path_to_data = 'E:\\Databases\\MSP_podcast\\Audios'
-    path_to_labels_partition='E:\\Databases\\MSP_podcast\\Partitions.txt'
+    path_to_labels = 'C:\\MSP_podcast\\labels\\Labels.txt'
+    path_to_train_data = 'C:\\MSP_podcast\\Sep_audios\\train'
+    path_to_val_data='C:\\MSP_podcast\\Sep_audios\\dev'
+    path_to_labels_partition='C:\\MSP_podcast\\Partitions.txt'
     path_to_save_model_weights='best_model'
     one_hot_labeling = True
     num_classes = 7
-    normalization = False
-    data_preprocessing_mode = 'raw'
+    normalization = True
+    data_preprocessing_mode = 'MFCC'
     num_mfcc = 128
     sequence_max_length = 14
-    window_length = 1
-    batch_size=5
+    window_length = 0.5
+    batch_size=64
     # load and preprocess labels
     labels = load_and_preprocess_labels_MSP_podcast(path_to_labels)
     # get labels partition (on train and dev) and split labels on train and dev
@@ -195,35 +197,35 @@ def main():
     dev_labels = delete_instances_with_class(dev_labels, class_to_delete=-1)
     # create generator-loader
     train_generator=FixedChunksGenerator_loader(sequence_max_length=sequence_max_length, window_length=window_length,
-                                                load_path= path_to_data, resample=16000,
+                                                load_path= path_to_train_data, resample=16000,
                  data_preprocessing_mode= data_preprocessing_mode, num_mfcc = num_mfcc,
                  labels = train_labels, labels_type= 'sequence_to_one', batch_size=batch_size ,
                  normalization= normalization, one_hot_labeling = one_hot_labeling,
                  num_classes = num_classes)
     # define dev generato and callback to evaluate model performance at the end of epoch
     dev_generator=FixedChunksGenerator_loader(sequence_max_length=sequence_max_length, window_length=window_length,
-                                              load_path= path_to_data,resample=16000,
+                                              load_path= path_to_val_data,resample=16000,
                  data_preprocessing_mode= data_preprocessing_mode, num_mfcc = num_mfcc,
                  labels = dev_labels, labels_type= 'sequence_to_one', batch_size=batch_size ,
                  normalization= normalization, one_hot_labeling = one_hot_labeling,
                  num_classes = num_classes)
     dev_callback=validation_callback(dev_generator)
-
     # create and compile model
-    input_shape = (14, 16000, 1)
-    model = chunk_based_1d_cnn_attention_model(input_shape=input_shape, num_output_neurons=num_classes,
-                                               filters_per_layer=(128, 128, 256,256, 256,256),
-                                               filter_sizes=(20, 15, 12, 8, 6, 5),
-                                               pooling_sizes=(8, 4, 4, 2,2,2),
-                                               pooling_step=1,
-                                               need_regularization=True,
-                                               dropout=True,
-                                               dropout_rate=0.3)
-    model.compile(optimizer=tf.keras.optimizers.Adam(0.0005), loss='categorical_crossentropy',
+    input_shape = (28, 32, 128)
+    model = chunk_based_rnn_model(input_shape=input_shape, num_output_neurons=num_classes,
+                          neurons_on_layer = (256, 512),
+                          rnn_type = 'LSTM',
+                          bidirectional = False,
+                          need_regularization = True,
+                          dropout = True,
+                          dropout_rate=0.3
+                          )
+
+    model.compile(optimizer=tf.keras.optimizers.Adam(0.001), loss='categorical_crossentropy',
                   metrics=[tf.keras.metrics.Recall()])
     model.summary()
     # fit model
-    hist = model.fit(train_generator, epochs=1, use_multiprocessing=True, callbacks=[dev_callback])
+    hist = model.fit(train_generator, epochs=15, use_multiprocessing=True, callbacks=[dev_callback])
     # save model. The model will be saved with best weights evaluated on devel set (since the dev_callback will set
     # weights of model at the end of training process)
     if not os.path.exists(path_to_save_model_weights):
@@ -234,7 +236,7 @@ def main():
 
 
 if __name__=='__main__':
-    #main()
-    separate_train_dev_test_audion_on_different_dirs(path_to_data='E:\\Databases\\MSP_podcast\\Audios',
+    main()
+    '''separate_train_dev_test_audion_on_different_dirs(path_to_data='E:\\Databases\\MSP_podcast\\Audios',
                                                      path_to_partitions='E:\\Databases\\MSP_podcast\\Partitions.txt',
-                                                     destination_path='E:\\Databases\\MSP_podcast\\Sep_audios')
+                                                     destination_path='E:\\Databases\\MSP_podcast\\Sep_audios')'''

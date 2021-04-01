@@ -317,19 +317,15 @@ class FixedChunksGenerator_loader(tf.keras.utils.Sequence):
                     features extracted from each window. The output shape is (num_chunks, window_length, num_features)
                     for multiprocessing returns the filename as well.
         """
-        batches = []
-        for batch_idx in range(cut_audio.shape[0]):
-            chunks = []
-            for chunk_idx in range(cut_audio.shape[1]):
-                extracted_features = self._preprocess_raw_audio(cut_audio[batch_idx, chunk_idx], sample_rate,
-                                                                preprocess_type, num_mfcc)
-                chunks.append(extracted_features[np.newaxis, ...])
-            chunks = np.concatenate(chunks, axis=0)[np.newaxis, ...]
-            batches.append(chunks)
-        batches = np.concatenate(batches, axis=0)
+        chunks = []
+        for chunk_idx in range(cut_audio.shape[0]):
+            extracted_features = self._preprocess_raw_audio(cut_audio[chunk_idx], sample_rate,
+                                                            preprocess_type, num_mfcc)
+            chunks.append(extracted_features[np.newaxis, ...])
+        chunks = np.concatenate(chunks, axis=0)
         if filename != None:
-            return batches, filename
-        return batches
+            return chunks, filename
+        return chunks
 
     def _cut_sequence_on_slices(self, sequence: np.ndarray, sample_rate: int) -> np.ndarray:
         """cut provided sequence on fixed number of slices. The cutting process carries out on axis=0

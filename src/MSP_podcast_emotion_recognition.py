@@ -1,8 +1,23 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
+"""Contains script of training the model on MSP-podcast dataset. Dataset description: https://ecs.utdallas.edu/research/researchlabs/msp-lab/MSP-Podcast.html
+    Model is based on dynamic adjusting steps of cut window to always get the same number of chunks.
+    THe idea of model is taken from: https://indico2.conference4me.psnc.pl/event/35/contributions/3415/attachments/531/557/Wed-1-9-1.pdf
+
+List of functions:
+    * load_and_preprocess_labels_MSP_podcast - laods and preprocess labels of original MSP-podcast database.
+    * delete_instances_with_class - deletes instances from dataset with undesirable class (usually -1)
+    * get_train_dev_separation_in_dict - loads partition file and returns dict, in which the training and development
+    files are defined
+    * get_labels_according_to_filenames - returns the subset of provided labels according proviede filenames in list
+    * custom_recall_validation_with_generator - recall score, which calculates recall on one full iteration of generator
+    * validation_callback - class for model.fit() function. Calculates recall score at the end of each epoch and save
+    model weights if they are better all the former (thus, at the end of training you will have the best weights). Moreover,
+    it assign at the end of training saved best weights to the model.
+    * separate_train_dev_test_audion_on_different_dirs - moves files located in one directory to separate directories.
+    Thus, separates train, dev and test sets apart each other.
 """
-TODO: add file description and functions list
-"""
+
 import contextlib
 import shutil
 import wave
@@ -21,10 +36,8 @@ __email__ = "denis.dresvyanskiy@uni-ulm.de"
 
 from sklearn.metrics import recall_score
 
-from src.utils.audio_preprocessing_utils import load_wav_file
-from src.utils.generator_loader import FixedChunksGenerator_loader
-from src.utils.sequence_to_one_models import chunk_based_1d_cnn_attention_model, chunk_based_rnn_attention_model, \
-    chunk_based_rnn_model
+from keras_datagenerators.generator_loader import FixedChunksGenerator_loader
+from preprocessing.sequence_to_one_models import chunk_based_rnn_model
 
 """
 Angry		(A)
@@ -71,23 +84,37 @@ def load_and_preprocess_labels_MSP_podcast(path:str)->Dict[str, np.ndarray]:
                 # split line by ';' and throw out last element of array, because it will be always empty string
                 splitted_line=line.split(';')[:-1]
                 # save extracted label and filename
-                filename=splitted_line[0]
+                filename=splitted_line[0].strip()
                 class_category=splitted_line[1].strip()
                 labels[filename]=np.array(emotion_to_int_mappping[class_category]).reshape((-1,))
     return labels
 
 def delete_instances_with_class(labels:Dict[str, np.ndarray], class_to_delete:int=-1)-> Dict[str, np.ndarray]:
-    # TODO: add description
-        keys_to_delete=[]
-        for key, item in labels.items():
-            if item==class_to_delete:
-                keys_to_delete.append(key)
-        for key in keys_to_delete:
-            labels.pop(key)
-        return labels
+    """Deletes instances with label defined in class_to_delete from labels.
+
+    :param labels: Dict[str, np.ndarray]
+                labels in format Dict[filename->np.ndarray with shape (1,1)]
+    :param class_to_delete: int
+                class shoud to be deleted
+    :return: Dict[str, np.ndarray]
+                labels in format Dict[filename->np.ndarray with shape (1,1)] without deleted instances
+    """
+    keys_to_delete=[]
+    for key, item in labels.items():
+        if item==class_to_delete:
+            keys_to_delete.append(key)
+    for key in keys_to_delete:
+        labels.pop(key)
+    return labels
 
 def get_train_dev_separation_in_dict(path:str)-> Dict[str, List[str]]:
-    #TODO: write description
+    """Loads train and dev partition according to file provided via path.
+
+    :param path: str
+            path to the file with partitions on train and dev sets. SHould be .txt file
+    :return: Dict[str, List[str]]
+            dict in format ['train'->List[filenames], 'dev'->List[filenames]]
+    """
     labels_partition_dict={}
     partition_df=pd.read_csv(path, sep=';', header=None)
     labels_partition_dict['train']=partition_df[partition_df.iloc[:,0]=='Train'].iloc[:,1].to_list()
@@ -96,8 +123,16 @@ def get_train_dev_separation_in_dict(path:str)-> Dict[str, List[str]]:
 
 def get_labels_according_to_filenames(labels:Dict[str, np.ndarray],
                                                   filenames:List[str])-> Dict[str, np.ndarray]:
-    # TODO: write description
-    extracted_labels=dict((filename.strip(), labels[filename.strip()]) for filename in filenames)
+    """Returns subset of labels according to provided filenames in List.
+
+    :param labels:Dict[str, np.ndarray]
+                labels in format DIct[filename->np.ndarray with shape (1,1)]
+    :param filenames: List[str]
+                filenames, which should be included in new formed subset
+    :return:Dict[str, np.ndarray]
+                subset of labels according to provided filenames
+    """
+    extracted_labels=dict((filename, labels[filename]) for filename in filenames)
     return extracted_labels
 
 def custom_recall_validation_with_generator(generator:FixedChunksGenerator_loader, model:tf.keras.Model)->float:
@@ -111,6 +146,10 @@ def custom_recall_validation_with_generator(generator:FixedChunksGenerator_loade
     return recall_score(total_ground_truth, total_predictions,average='macro')
 
 class validation_callback(tf.keras.callbacks.Callback):
+    """Calculates the recall score at the end of each training epoch and saves the best weights across all the training
+        process. At the end of training process, it will set weights of the model to the best found ones.
+
+    """
     def __init__(self, val_generator:FixedChunksGenerator_loader):
         super(validation_callback, self).__init__()
         # best_weights to store the weights at which the minimum UAR occurs.
